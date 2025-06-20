@@ -61,7 +61,7 @@
       "action": "generateSolution",
       "agent": "junior1",
       "params": {
-        "task": "Design a Python cellular automata simulation with the following features:\n1. Implement Conway's Game of Life or a similar rule-based system\n2. Create a visual display using matplotlib or similar\n3. Allow the simulation to run for multiple generations\n4. Include at least 2 different initial patterns (glider, blinker, etc.)"
+        "task": "Design a Python cellular automata simulation making use of heavy lifting open source libraires. Keep the code very short and provide the complete solution. Make the solution have visualizations and show emergence"
       },
       "output": "initialCode"
     },
@@ -77,10 +77,10 @@
     {
       "id": "revision_loop",
       "action": "loop",
-      "iterations": 2,
+      "iterations": 5,
       "steps": [
         {
-          "id": "revise_{{iteration}}",
+          "id": "revision_{{iteration}}",
           "action": "reviseCode",
           "agent": "junior1",
           "params": {
@@ -94,7 +94,7 @@
           "action": "reviewCode", 
           "agent": "senior1",
           "params": {
-            "code": "{{outputs.revise_{{iteration}}}}"
+            "code": "{{lastOutput('junior1')}}"
           },
           "output": "review_{{iteration}}_feedback"
         }

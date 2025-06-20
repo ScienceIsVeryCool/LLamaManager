@@ -322,7 +322,7 @@ class ScenarioExecutor:
         # Save intermediate outputs if configured
         if self.scenario.get('config', {}).get('saveIntermediateOutputs', False):
             output_dir = Path(self.scenario['config']['outputDirectory'])
-            output_file = output_dir / f"{step.get('id', action_name)}_{agent_name}.txt"
+            output_file = output_dir / f"{step.get('id', action_name)}_{agent_name}.md"
             output_file.write_text(result, encoding='utf-8')
     
     async def _execute_loop(self, step: Dict[str, Any], context: Dict[str, Any]):
