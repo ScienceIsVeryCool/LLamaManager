@@ -1,0 +1,126 @@
+{
+  "scenario": {
+    "name": "Cellular Automata Development",
+    "version": "1.0",
+    "description": "Iterative development of a cellular automata simulation with code review"
+  },
+  
+  "agentTemplates": {
+    "juniorDev": {
+      "model": "gemma3:4b",
+      "temperature": 0.7,
+      "systemPrompt": "You are a Junior Software Engineer who writes clean, simple Python code. Focus on creating working solutions using libraries where appropriate.",
+      "defaultContext": "append"
+    },
+    "seniorReviewer": {
+      "model": "gemma3:4b", 
+      "temperature": 0.3,
+      "systemPrompt": "You are a Senior Engineer who provides blunt, actionable feedback. Be concise and direct. Focus on critical issues only. Don't hesitate to suggest starting over if the approach is fundamentally flawed."
+    }
+  },
+  
+  "actionTemplates": {
+    "generateSolution": {
+      "type": "prompt",
+      "promptTemplate": "Create a complete Python solution for: {{task}}\n\nRequirements:\n- Use appropriate libraries (matplotlib, numpy, etc.)\n- Keep it simple but functional\n- Include visualization\n- Add clear comments",
+      "outputCapture": "full"
+    },
+    "reviewCode": {
+      "type": "prompt",
+      "promptTemplate": "Review this Python code critically. Focus on:\n- Correctness and bugs\n- Code structure and clarity\n- Performance issues\n- Missing functionality\n\nBe blunt and direct. If it needs a complete rewrite, say so.\n\nCode to review:\n{{code}}",
+      "inputRequired": ["code"],
+      "outputCapture": "full"
+    },
+    "reviseCode": {
+      "type": "prompt",
+      "promptTemplate": "Based on this feedback:\n{{feedback}}\n\nRevise this code to address ALL the issues mentioned:\n{{code}}\n\nProvide the complete revised solution.",
+      "inputRequired": ["feedback", "code"],
+      "outputCapture": "full"
+    }
+  },
+  
+  "execution": [
+    {
+      "id": "init_junior",
+      "action": "createAgent",
+      "params": {
+        "template": "juniorDev",
+        "instanceName": "junior1"
+      }
+    },
+    {
+      "id": "init_senior",
+      "action": "createAgent",
+      "params": {
+        "template": "seniorReviewer",
+        "instanceName": "senior1"
+      }
+    },
+    {
+      "id": "first_attempt",
+      "action": "generateSolution",
+      "agent": "junior1",
+      "params": {
+        "task": "Design a Python cellular automata simulation with the following features:\n1. Implement Conway's Game of Life or a similar rule-based system\n2. Create a visual display using matplotlib or similar\n3. Allow the simulation to run for multiple generations\n4. Include at least 2 different initial patterns (glider, blinker, etc.)"
+      },
+      "output": "initialCode"
+    },
+    {
+      "id": "initial_review",
+      "action": "reviewCode",
+      "agent": "senior1",
+      "params": {
+        "code": "{{outputs.initialCode}}"
+      },
+      "output": "review1"
+    },
+    {
+      "id": "revision_loop",
+      "action": "loop",
+      "iterations": 2,
+      "steps": [
+        {
+          "id": "revise_{{iteration}}",
+          "action": "reviseCode",
+          "agent": "junior1",
+          "params": {
+            "code": "{{lastOutput('junior1')}}",
+            "feedback": "{{lastOutput('senior1')}}"
+          },
+          "output": "revision_{{iteration}}"
+        },
+        {
+          "id": "review_revision_{{iteration}}",
+          "action": "reviewCode", 
+          "agent": "senior1",
+          "params": {
+            "code": "{{outputs.revise_{{iteration}}}}"
+          },
+          "output": "review_{{iteration}}_feedback"
+        }
+      ]
+    },
+    {
+      "id": "save_final",
+      "action": "saveToFile",
+      "params": {
+        "content": "{{lastOutput('junior1')}}",
+        "filename": "cellular_automata.py"
+      }
+    },
+    {
+      "id": "save_final_review",
+      "action": "saveToFile",
+      "params": {
+        "content": "{{lastOutput('senior1')}}",
+        "filename": "final_review.txt"
+      }
+    }
+  ],
+  
+  "config": {
+    "logLevel": "info",
+    "saveIntermediateOutputs": true,
+    "outputDirectory": "./cellular_automata_results"
+  }
+}

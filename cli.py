@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple CLI for Ollama Agent Manager
+CLI for Scenario-based Ollama Agent Manager
 """
 
 import asyncio
@@ -9,102 +9,191 @@ import json
 import logging
 import sys
 from pathlib import Path
-from ollama_agent import ConversationManager, OllamaAgentError, TaskResult
+from typing import Optional, Dict, Any
+from scenario_engine import ScenarioExecutor, ScenarioError
 
 
-def setup_logging(verbose: bool = False) -> None:
+def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
     """Configure logging based on verbosity level"""
-    level = logging.DEBUG if verbose else logging.INFO
+    if quiet:
+        level = logging.WARNING
+    elif verbose:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+    
     logging.basicConfig(
         level=level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
 
-def save_results(result: TaskResult, output_path: str) -> None:
-    """Save results to file with proper error handling"""
+def validate_scenario_file(path: str) -> Optional[Dict[str, Any]]:
+    """Validate scenario file structure"""
     try:
-        output_file = Path(output_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, 'r') as f:
+            scenario = json.load(f)
         
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(result.to_dict(), f, indent=2, default=str)
+        # Check required sections
+        required = ['agentTemplates', 'actionTemplates', 'execution']
+        missing = [s for s in required if s not in scenario]
         
-        print(f"\nResults saved to {output_path}")
+        if missing:
+            print(f"Error: Scenario missing required sections: {', '.join(missing)}", file=sys.stderr)
+            return None
         
-    except Exception as e:
-        print(f"Error saving results to {output_path}: {e}", file=sys.stderr)
+        # Check for at least one agent template
+        if not scenario['agentTemplates']:
+            print("Error: No agent templates defined", file=sys.stderr)
+            return None
+        
+        # Check for at least one execution step
+        if not scenario['execution']:
+            print("Error: No execution steps defined", file=sys.stderr)
+            return None
+        
+        return scenario
+        
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON in scenario file: {e}", file=sys.stderr)
+        return None
+    except FileNotFoundError:
+        print(f"Error: Scenario file not found: {path}", file=sys.stderr)
+        return None
 
 
-def print_results(result: TaskResult) -> None:
-    """Print results in a formatted way"""
-    print("\n" + "="*50)
-    print("TASK EXECUTION COMPLETE")
-    print("="*50)
-    print(f"Task: {result.task}")
-    print(f"Mode: {result.mode}")
-    if result.agent:
-        print(f"Agent: {result.agent}")
+def print_scenario_info(scenario: Dict[str, Any]) -> None:
+    """Print information about a scenario"""
+    info = scenario.get('scenario', {})
+    print(f"\nScenario: {info.get('name', 'Unnamed')}")
+    print(f"Version: {info.get('version', 'N/A')}")
     
-    if result.final_solution:
-        print(f"\nFinal Solution:\n{'-'*20}")
-        print(result.final_solution)
+    print(f"\nAgent Templates: {len(scenario['agentTemplates'])}")
+    for name, template in scenario['agentTemplates'].items():
+        print(f"  - {name}: {template['model']}")
     
-    print("\n" + "="*50)
+    print(f"\nAction Templates: {len(scenario['actionTemplates'])}")
+    for name in scenario['actionTemplates']:
+        print(f"  - {name}")
+    
+    print(f"\nExecution Steps: {len(scenario['execution'])}")
+    print()
 
 
-async def run_task_with_cleanup(manager: ConversationManager, task: str, 
-                              mode: str, agent: str = None) -> TaskResult:
-    """Run task with proper cleanup"""
-    try:
-        if mode == 'self_reflection' and agent:
-            result = await manager.self_reflection_task(task, agent)
-        else:
-            result = await manager.run_task(task, mode)
-        return result
-    finally:
-        # Always cleanup, even if task fails
-        manager.cleanup()
+def create_example_scenario(output_path: str) -> None:
+    """Create an example scenario file"""
+    example = {
+        "scenario": {
+            "name": "Code Review Example",
+            "version": "1.0"
+        },
+        "agentTemplates": {
+            "developer": {
+                "model": "gemma:2b",
+                "temperature": 0.7,
+                "systemPrompt": "You are a helpful developer who writes clean Python code."
+            },
+            "reviewer": {
+                "model": "gemma:2b",
+                "temperature": 0.3,
+                "systemPrompt": "You are a code reviewer who provides constructive feedback."
+            }
+        },
+        "actionTemplates": {
+            "writeCode": {
+                "type": "prompt",
+                "promptTemplate": "Write a Python function that {{task}}",
+                "outputCapture": "full"
+            },
+            "reviewCode": {
+                "type": "prompt",
+                "promptTemplate": "Review this code and suggest improvements:\n\n{{code}}",
+                "inputRequired": ["code"],
+                "outputCapture": "full"
+            }
+        },
+        "execution": [
+            {
+                "id": "create_dev",
+                "action": "createAgent",
+                "params": {
+                    "template": "developer",
+                    "instanceName": "dev1"
+                }
+            },
+            {
+                "id": "create_reviewer",
+                "action": "createAgent",
+                "params": {
+                    "template": "reviewer",
+                    "instanceName": "reviewer1"
+                }
+            },
+            {
+                "id": "write_function",
+                "action": "writeCode",
+                "agent": "dev1",
+                "params": {
+                    "task": "calculates the factorial of a number"
+                },
+                "output": "initial_code"
+            },
+            {
+                "id": "review_function",
+                "action": "reviewCode",
+                "agent": "reviewer1",
+                "params": {
+                    "code": "{{outputs.initial_code}}"
+                }
+            }
+        ],
+        "config": {
+            "logLevel": "info",
+            "saveIntermediateOutputs": True,
+            "outputDirectory": "./results"
+        }
+    }
+    
+    with open(output_path, 'w') as f:
+        json.dump(example, f, indent=2)
+    
+    print(f"Created example scenario: {output_path}")
 
 
 def create_parser() -> argparse.ArgumentParser:
     """Create and configure argument parser"""
     parser = argparse.ArgumentParser(
-        description='Ollama Multi-Agent Task Manager',
+        description='Scenario-based Ollama Agent Manager',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s "Write a Python sorting algorithm" --mode debate
-  %(prog)s "Explain quantum computing" --mode self_reflection --agent researcher
-  %(prog)s "Design a web API" --mode debate --output results.json
+  %(prog)s scenario.json
+  %(prog)s scenario.json --verbose
+  %(prog)s --validate scenario.json
+  %(prog)s --create-example my_scenario.json
         """
     )
     
-    parser.add_argument('task', 
-                       help='The task to execute')
+    parser.add_argument('scenario', nargs='?',
+                       help='Path to scenario JSON file')
     
-    parser.add_argument('--mode', 
-                       choices=['self_reflection', 'debate'], 
-                       default='self_reflection', 
-                       help='Execution mode (default: %(default)s)')
+    parser.add_argument('--validate', '-c', action='store_true',
+                       help='Validate scenario file without executing')
     
-    parser.add_argument('--config', 
-                       default='config.yaml', 
-                       help='Path to configuration file (default: %(default)s)')
+    parser.add_argument('--info', '-i', action='store_true',
+                       help='Show scenario information without executing')
     
-    parser.add_argument('--output', 
-                       help='Output file for results (JSON format)')
+    parser.add_argument('--create-example', metavar='PATH',
+                       help='Create an example scenario file')
     
-    parser.add_argument('--agent', 
-                       help='Agent name for self-reflection mode')
-    
-    parser.add_argument('--verbose', '-v', 
-                       action='store_true',
+    parser.add_argument('--verbose', '-v', action='store_true',
                        help='Enable verbose logging')
     
-    parser.add_argument('--no-cleanup', 
-                       action='store_true',
-                       help='Skip model cleanup after execution')
+    parser.add_argument('--quiet', '-q', action='store_true',
+                       help='Suppress info logging (warnings and errors only)')
+    
+    parser.add_argument('--dry-run', action='store_true',
+                       help='Show execution plan without running')
     
     return parser
 
@@ -114,47 +203,61 @@ async def main():
     parser = create_parser()
     args = parser.parse_args()
     
+    # Handle example creation
+    if args.create_example:
+        create_example_scenario(args.create_example)
+        return
+    
+    # Require scenario file for other operations
+    if not args.scenario:
+        parser.print_help()
+        sys.exit(1)
+    
     # Setup logging
-    setup_logging(args.verbose)
+    setup_logging(args.verbose, args.quiet)
     logger = logging.getLogger(__name__)
     
-    try:
-        # Validate arguments
-        if args.mode == 'self_reflection' and args.agent:
-            logger.info(f"Running self-reflection mode with agent: {args.agent}")
-        elif args.mode == 'debate':
-            logger.info("Running debate mode")
-        else:
-            logger.info("Running self-reflection mode with default agent")
-        
-        # Initialize manager
-        logger.info(f"Loading configuration from: {args.config}")
-        manager = ConversationManager(args.config)
-        
-        # Run task
-        logger.info(f"Executing task: {args.task[:100]}...")
-        result = await run_task_with_cleanup(manager, args.task, args.mode, args.agent)
-        
-        # Handle no-cleanup flag
-        if not args.no_cleanup:
-            logger.info("Cleanup completed")
-        else:
-            logger.info("Skipping cleanup (--no-cleanup flag set)")
-        
-        # Output results
-        if args.output:
-            save_results(result, args.output)
-        else:
-            print_results(result)
-        
-        logger.info("Task execution completed successfully")
-        
-    except OllamaAgentError as e:
-        print(f"Agent Error: {e}", file=sys.stderr)
+    # Validate scenario
+    scenario = validate_scenario_file(args.scenario)
+    if not scenario:
         sys.exit(1)
+    
+    # Handle info display
+    if args.info:
+        print_scenario_info(scenario)
+        return
+    
+    # Handle validation only
+    if args.validate:
+        print(f"✓ Scenario file is valid: {args.scenario}")
+        return
+    
+    # Handle dry run
+    if args.dry_run:
+        print(f"Dry run of scenario: {args.scenario}")
+        print_scenario_info(scenario)
+        print("Execution steps:")
+        for i, step in enumerate(scenario['execution'], 1):
+            print(f"  {i}. {step.get('id', 'unnamed')} - Action: {step['action']}")
+        return
+    
+    # Execute scenario
+    try:
+        logger.info(f"Executing scenario: {args.scenario}")
         
-    except FileNotFoundError as e:
-        print(f"File Error: {e}", file=sys.stderr)
+        executor = ScenarioExecutor(args.scenario)
+        await executor.execute()
+        
+        print("\n✓ Scenario execution completed successfully")
+        
+        # Show output location if configured
+        config = scenario.get('config', {})
+        if config.get('saveIntermediateOutputs'):
+            output_dir = config.get('outputDirectory', './results')
+            print(f"  Outputs saved to: {output_dir}")
+        
+    except ScenarioError as e:
+        logger.error(f"Scenario error: {e}")
         sys.exit(1)
         
     except KeyboardInterrupt:
