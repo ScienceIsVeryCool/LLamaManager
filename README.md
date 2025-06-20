@@ -1,93 +1,162 @@
-# Ollama Multi-Agent Conversation Manager
+# Scenario-based Ollama Agent System
 
-A Python script for managing intelligent conversations with Ollama LLMs, supporting self-reflection and multi-agent debate modes.
+A modular, scenario-driven system for orchestrating multi-agent conversations with Ollama models.
 
-## Features
+## Key Features
 
-- **Self-Reflection Mode**: Automatically follows up on responses with reflection prompts to simulate deeper thinking
-- **Debate Mode**: Two agents (creator and judge) iterate on solutions through feedback cycles
-- **Configurable**: Easy YAML configuration for agents, prompts, and behavior
-- **Async Support**: Efficient handling of multiple conversations
+- **Scenario-driven execution**: Define complex agent interactions in JSON
+- **Memory-efficient**: Only one model loaded at a time
+- **Template system**: Reusable agent and action templates
+- **Flexible data flow**: Pass outputs between agents using template variables
+- **Loop support**: Iterate actions with variable substitution
+- **Context management**: Control how agents maintain conversation history
 
-## Installation
+## Quick Start
 
-1. Ensure Ollama is running on your system:
-   ```bash
-   ollama serve
-   ```
-
-2. Install Python dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Pull your desired model(s):
-   ```bash
-   ollama pull gemma2:2b
-   ```
-
-## Usage
-
-### Command Line Interface
+1. Ensure Ollama is running (`ollama serve`)
+2. Create or use an example scenario file
+3. Run the scenario:
 
 ```bash
-# Self-reflection mode (default)
-python cli.py "Write a function to sort a list"
-
-# Debate mode
-python cli.py "Design a REST API for a todo app" --mode debate
-
-# Save output to file
-python cli.py "Explain quantum computing" --output results.json
-
-# Use specific agent
-python cli.py "Calculate fibonacci" --agent thinker
+python cli.py cellular_automata_scenario.json
 ```
 
-### Python API
+## Architecture
 
-```python
-import asyncio
-from ollama_agent import ConversationManager
+### Core Components
 
-async def example():
-    manager = ConversationManager()
-    
-    # Self-reflection mode
-    result = await manager.run_task(
-        "Write a Python decorator", 
-        mode="self_reflection"
-    )
-    
-    # Debate mode
-    result = await manager.run_task(
-        "Design a database schema", 
-        mode="debate"
-    )
+1. **ScenarioExecutor**: Main execution engine that processes scenario files
+2. **AgentInstance**: Runtime representation of an agent with conversation management
+3. **TemplateEngine**: Handles variable substitution in prompts and parameters
+4. **Action System**: Extensible action execution framework
 
-asyncio.run(example())
+### Memory Management
+
+- Models are loaded on-demand when an agent needs to execute
+- Previous models are unloaded before loading new ones
+- Agents maintain their conversation history independently
+
+### Scenario File Structure
+
+```json
+{
+  "scenario": {
+    "name": "Scenario Name",
+    "version": "1.0"
+  },
+  
+  "agentTemplates": {
+    "templateName": {
+      "model": "model_name",
+      "temperature": 0.7,
+      "systemPrompt": "System prompt",
+      "defaultContext": "clean"  // clean | append | rolling
+    }
+  },
+  
+  "actionTemplates": {
+    "actionName": {
+      "type": "prompt",
+      "promptTemplate": "Template with {{variables}}",
+      "inputRequired": ["variable_names"],
+      "outputCapture": "full"
+    }
+  },
+  
+  "execution": [
+    // Execution steps
+  ],
+  
+  "config": {
+    "logLevel": "info",
+    "saveIntermediateOutputs": true,
+    "outputDirectory": "./results"
+  }
+}
 ```
 
-## Configuration
+## Built-in Actions
 
-Edit `config.yaml` to customize:
-
-- **agents**: Define multiple agents with different models and prompts
-- **reflection_prompts**: Customize follow-up prompts for self-reflection
-- **debate**: Configure creator/judge agents and number of rounds
-
-### Example: Adding a New Agent
-
-```yaml
-agents:
-  - name: "coder"
-    model: "codellama:7b"
-    temperature: 0.3
-    system_prompt: "You are an expert programmer focused on clean, efficient code."
+### createAgent
+Creates an agent instance from a template:
+```json
+{
+  "action": "createAgent",
+  "params": {
+    "template": "templateName",
+    "instanceName": "agent1"
+  }
+}
 ```
 
-## Notes
+### loop
+Executes steps multiple times with iteration variable:
+```json
+{
+  "action": "loop",
+  "iterations": 3,
+  "steps": [
+    // Steps to repeat
+  ]
+}
+```
 
-- The script uses the official `ollama` Python package
-- MCP (Model Context Protocol) is not directly supported by Ollama, but this script achieves similar multi-turn reasoning through structured prompts
-- Results are saved with timestamps and full conversation history
+### saveToFile
+Saves content to a file:
+```json
+{
+  "action": "saveToFile",
+  "params": {
+    "content": "{{variable}}",
+    "filename": "output.txt"
+  }
+}
+```
+
+## Template Variables
+
+### Basic Variables
+- `{{outputs.stepId}}` - Access output from a specific step
+- `{{variable}}` - Access a parameter variable
+
+### Functions
+- `{{lastOutput('agentName')}}` - Get the last output from an agent
+
+### Loop Variables
+- `{{iteration}}` - Current iteration number in a loop
+
+## Context Modes
+
+- **clean**: Each query starts fresh (default)
+- **append**: Full conversation history is maintained
+- **rolling**: Keep last 10 messages for context
+
+## CLI Usage
+
+```bash
+# Run a scenario
+python cli.py scenario.json
+
+# Validate without executing
+python cli.py --validate scenario.json
+
+# Show scenario information
+python cli.py --info scenario.json
+
+# Create example scenario
+python cli.py --create-example my_scenario.json
+
+# Verbose logging
+python cli.py scenario.json --verbose
+
+# Dry run (show execution plan)
+python cli.py scenario.json --dry-run
+```
+
+## Example: Code Development Workflow
+
+The included `cellular_automata_scenario.json` demonstrates:
+1. Creating developer and reviewer agents
+2. Generating initial code solution
+3. Review and feedback loop
+4. Multiple revision iterations
