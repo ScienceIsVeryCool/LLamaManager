@@ -55,8 +55,8 @@ class AgentInstance:
             self._client = ollama.Client()
         return self._client
     
-    async def query(self, prompt: str) -> str:
-        """Send query to model"""
+    async def query(self, prompt: str, timeout: int = 300) -> str:
+        """Send query to model with timeout"""
         messages = []
         
         if self.system_prompt:
@@ -71,10 +71,15 @@ class AgentInstance:
         messages.append({"role": "user", "content": prompt})
         
         try:
-            response = self.client.chat(
-                model=self.model,
-                messages=messages,
-                options={"temperature": self.temperature}
+            # Add timeout to the chat call
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self.client.chat,
+                    model=self.model,
+                    messages=messages,
+                    options={"temperature": self.temperature}
+                ),
+                timeout=timeout
             )
             
             result = response['message']['content']
@@ -87,6 +92,8 @@ class AgentInstance:
             
             return result
             
+        except asyncio.TimeoutError:
+            raise ActionError(f"Query timed out after {timeout}s for agent {self.name}")
         except Exception as e:
             raise ActionError(f"Query failed for agent {self.name}: {e}")
     
