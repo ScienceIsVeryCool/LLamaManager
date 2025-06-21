@@ -68,6 +68,8 @@ def print_scenario_info(scenario: Dict[str, Any]) -> None:
     info = scenario.get('scenario', {})
     print(f"\nScenario: {info.get('name', 'Unnamed')}")
     print(f"Version: {info.get('version', 'N/A')}")
+    if 'description' in info:
+        print(f"Description: {info['description']}")
     
     print(f"\nAgent Templates: {len(scenario['agentTemplates'])}")
     for name, template in scenario['agentTemplates'].items():
@@ -78,6 +80,14 @@ def print_scenario_info(scenario: Dict[str, Any]) -> None:
         print(f"  - {name}")
     
     print(f"\nExecution Steps: {len(scenario['execution'])}")
+    
+    config = scenario.get('config', {})
+    if config:
+        print(f"\nConfiguration:")
+        print(f"  - Output Directory: {config.get('outputDirectory', './results')}")
+        print(f"  - Log Level: {config.get('logLevel', 'INFO')}")
+        print(f"  - Query Timeout: {config.get('queryTimeout', 300)}s")
+        print(f"  - Save Intermediate: {config.get('saveIntermediateOutputs', False)}")
     print()
 
 
@@ -86,7 +96,8 @@ def create_example_scenario(output_path: str) -> None:
     example = {
         "scenario": {
             "name": "Code Review Example",
-            "version": "1.0"
+            "version": "1.0",
+            "description": "A simple example showing iterative code development with review"
         },
         "agentTemplates": {
             "developer": {
@@ -97,7 +108,8 @@ def create_example_scenario(output_path: str) -> None:
             "reviewer": {
                 "model": "gemma:2b",
                 "temperature": 0.3,
-                "systemPrompt": "You are a code reviewer who provides constructive feedback."
+                "systemPrompt": "You are a code reviewer who provides constructive feedback.",
+                "defaultContext": "clean"
             }
         },
         "actionTemplates": {
@@ -105,13 +117,14 @@ def create_example_scenario(output_path: str) -> None:
                 "promptTemplate": "Write a Python function that {{task}}"
             },
             "reviewCode": {
-                "promptTemplate": "Review this code and suggest improvements:\n\n{{code}}",
-                "inputRequired": ["code"]
+                "promptTemplate": "Review this code and suggest improvements:\n\n{{code}}"
+            },
+            "improveCode": {
+                "promptTemplate": "Improve this code based on the feedback:\n\nOriginal code:\n{{code}}\n\nFeedback:\n{{feedback}}"
             }
         },
         "execution": [
             {
-                "id": "create_dev",
                 "action": "createAgent",
                 "params": {
                     "template": "developer",
@@ -119,7 +132,6 @@ def create_example_scenario(output_path: str) -> None:
                 }
             },
             {
-                "id": "create_reviewer",
                 "action": "createAgent",
                 "params": {
                     "template": "reviewer",
@@ -127,7 +139,6 @@ def create_example_scenario(output_path: str) -> None:
                 }
             },
             {
-                "id": "write_function",
                 "action": "writeCode",
                 "agent": "dev1",
                 "params": {
@@ -136,17 +147,33 @@ def create_example_scenario(output_path: str) -> None:
                 "output": "initial_code"
             },
             {
-                "id": "review_function",
                 "action": "reviewCode",
                 "agent": "reviewer1",
                 "params": {
                     "code": "{{outputs.initial_code}}"
+                },
+                "output": "review_feedback"
+            },
+            {
+                "action": "improveCode",
+                "agent": "dev1",
+                "params": {
+                    "code": "{{outputs.initial_code}}",
+                    "feedback": "{{outputs.review_feedback}}"
+                },
+                "output": "final_code"
+            },
+            {
+                "action": "saveToFile",
+                "params": {
+                    "content": "# Final Implementation\n\n{{outputs.final_code}}",
+                    "filename": "factorial.py"
                 }
             }
         ],
         "config": {
             "logLevel": "info",
-            "saveIntermediateOutputs": True,
+            "saveIntermediateOutputs": true,
             "outputDirectory": "./results",
             "queryTimeout": 300
         }
@@ -178,11 +205,13 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s scenario.json
-  %(prog)s scenario.json 3
-  %(prog)s scenario.json --verbose
-  %(prog)s --validate scenario.json
-  %(prog)s --create-example my_scenario.json
+  %(prog)s scenario.json                    # Run once
+  %(prog)s scenario.json 3                  # Run 3 times
+  %(prog)s scenario.json --verbose          # Verbose output
+  %(prog)s --validate scenario.json         # Validate only
+  %(prog)s --info scenario.json             # Show scenario info
+  %(prog)s --create-example my_scenario.json # Create example
+  %(prog)s --dry-run scenario.json          # Show execution plan
         """
     )
     
@@ -295,14 +324,14 @@ async def main():
     if args.info:
         print_scenario_info(scenario)
         if args.repetitions > 1:
-            print(f"Will run {args.repetitions} iterations with separate output directories")
+            print(f"Note: Would run {args.repetitions} iterations with separate output directories")
         return
     
     # Handle validation only
     if args.validate:
         print(f"✓ Scenario file is valid: {args.scenario}")
         if args.repetitions > 1:
-            print(f"Will run {args.repetitions} iterations")
+            print(f"Will run {args.repetitions} iterations when executed")
         return
     
     # Handle dry run
@@ -313,7 +342,12 @@ async def main():
         print_scenario_info(scenario)
         print("Execution steps:")
         for i, step in enumerate(scenario['execution'], 1):
-            print(f"  {i}. {step.get('id', 'unnamed')} - Action: {step['action']}")
+            step_id = step.get('id', f'step_{i}')
+            action = step['action']
+            if 'agent' in step:
+                print(f"  {i}. [{step_id}] {step['agent']} → {action}")
+            else:
+                print(f"  {i}. [{step_id}] {action}")
         
         if args.repetitions > 1:
             base_output_dir = scenario.get('config', {}).get('outputDirectory', './results')

@@ -489,6 +489,6 @@
   "config": {
     "logLevel": "info",
     "saveIntermediateOutputs": true,
-    "outputDirectory": "./cellular_automata_advanced_results3"
+    "outputDirectory": "./cellular_automata_advanced_results2"
   }
 }

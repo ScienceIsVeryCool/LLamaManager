@@ -15,7 +15,7 @@
     "seniorReviewer": {
       "model": "gemma3:4b", 
       "temperature": 0.3,
-      "systemPrompt": "You are a Senior Engineer who provides blunt, actionable feedback. Be concise and direct. Focus on critical issues only. Don't hesitate to suggest starting over if the approach is fundamentally flawed."
+      "systemPrompt": "You are a Senior Engineer who provides blunt, actionable feedback. Be concise and direct. Focus on critical issues only."
     }
   },
   
@@ -27,22 +27,18 @@
       "promptTemplate": "Create a complete Python solution for: {{task}}\n\nRequirements:\n- Use appropriate libraries (matplotlib, numpy, etc.)\n- Keep it simple but functional\n- Include visualization\n- Add clear comments"
     },
     "reviewCode": {
-      "promptTemplate": "Review this Python code critically. Focus on:\n- Correctness and bugs\n- Code structure and clarity\n- Performance issues\n- Missing functionality\n\nBe blunt and direct. If it needs a complete rewrite, say so.\n\nCode to review:\n{{code}}",
-      "inputRequired": ["code"]
+      "promptTemplate": "Review this Python code critically. Focus on:\n- Correctness and bugs\n- Code structure and clarity\n- Performance issues\n- Missing functionality\n\nBe blunt and direct. If it needs a complete rewrite, say so.\n\nCode to review:\n{{code}}"
     },
     "reviewCodeSyntax": {
-      "promptTemplate": "Review this Python code critically for easy to catch bugs and errors. Focus on:\n- Correctness and bugs\n- Code structure and clarity\n- Performance issues\n- Missing functionality\n\nBe blunt and direct. If it needs a complete rewrite, say so.\n\nCode to review:\n{{code}}",
-      "inputRequired": ["code"]
+      "promptTemplate": "Review this Python code for syntax errors and obvious bugs. Be direct and specific.\n\nCode to review:\n{{code}}"
     },
     "reviseCode": {
-      "promptTemplate": "Based on this feedback:\n{{feedback}}\n\nRevise this code to address ALL the issues mentioned:\n{{code}}\n\nProvide the complete revised solution.",
-      "inputRequired": ["feedback", "code"]
+      "promptTemplate": "Based on this feedback:\n{{feedback}}\n\nRevise this code to address ALL the issues mentioned:\n{{code}}\n\nProvide the complete revised solution."
     }
   },
   
   "execution": [
     {
-      "id": "init_junior",
       "action": "createAgent",
       "params": {
         "template": "juniorDev",
@@ -50,7 +46,6 @@
       }
     },
     {
-      "id": "init_senior",
       "action": "createAgent",
       "params": {
         "template": "seniorReviewer",
@@ -58,7 +53,6 @@
       }
     },
     {
-      "id": "init_senior2",
       "action": "createAgent",
       "params": {
         "template": "seniorReviewer",
@@ -66,25 +60,22 @@
       }
     },
     {
-      "id": "draft",
       "action": "draftSolution",
       "agent": "junior1",
       "params": {
-        "task": "Draft up a design a Python cellular automata simulation making use of heavy lifting open source libraires. Keep the code very short and provide the complete solution.Make the solution have visualizations and show emergence. The goal is that the simulation is to be ran indefinitely where the initial spark of life needs to adapt."
+        "task": "Draft a Python cellular automata simulation using heavy lifting open source libraries. Keep the code very short. Make the solution have visualizations and show emergence. The simulation should run indefinitely where the initial spark of life adapts. I do not want something like Conways Game of Life, I want something new."
       },
       "output": "draft"
     },
     {
-      "id": "first_attempt",
       "action": "generateSolution",
       "agent": "junior1",
       "params": {
-        "task": "Now give the full solution to making the python cellular automata simulation with visualizations. Keep your code length to a minumal by leveraging libraries"
+        "task": "Now give the full solution to making the python cellular automata simulation with visualizations. Keep your code length minimal by leveraging libraries"
       },
       "output": "initialCode"
     },
     {
-      "id": "initial_review",
       "action": "reviewCode",
       "agent": "senior1",
       "params": {
@@ -93,7 +84,6 @@
       "output": "review1"
     },
     {
-      "id": "initial_review_syntax",
       "action": "reviewCodeSyntax",
       "agent": "senior2",
       "params": {
@@ -102,12 +92,10 @@
       "output": "review2"
     },
     {
-      "id": "revision_loop",
       "action": "loop",
       "iterations": 5,
       "steps": [
         {
-          "id": "revision_{{iteration}}",
           "action": "reviseCode",
           "agent": "junior1",
           "params": {
@@ -117,7 +105,6 @@
           "output": "revision_{{iteration}}"
         },
         {
-          "id": "review_revision_{{iteration}}",
           "action": "reviewCode", 
           "agent": "senior1",
           "params": {
@@ -128,7 +115,6 @@
       ]
     },
     {
-      "id": "save_final",
       "action": "saveToFile",
       "params": {
         "content": "{{lastOutput('junior1')}}",
@@ -136,7 +122,6 @@
       }
     },
     {
-      "id": "save_final_review",
       "action": "saveToFile",
       "params": {
         "content": "{{lastOutput('senior1')}}",
@@ -148,7 +133,7 @@
   "config": {
     "logLevel": "info",
     "saveIntermediateOutputs": true,
-    "outputDirectory": "./cellular_automata_results_simple_second",
+    "outputDirectory": "./cellular_automata_results_simple",
     "queryTimeout": 300
   }
 }

@@ -139,6 +139,24 @@ class TemplateEngine:
         return re.sub(pattern, replace_var, template)
     
     @staticmethod
+    def extract_variables(template: str) -> List[str]:
+        """Extract all variable names from a template"""
+        pattern = r'\{\{([^}]+)\}\}'
+        matches = re.findall(pattern, template)
+        
+        variables = []
+        for match in matches:
+            # Skip function calls
+            if '(' in match:
+                continue
+            # Skip dot notation (these come from context like outputs.x)
+            if '.' in match:
+                continue
+            variables.append(match)
+        
+        return list(set(variables))  # Remove duplicates
+    
+    @staticmethod
     def _evaluate_function(func_call: str, context: Dict[str, Any]) -> str:
         """Evaluate template functions"""
         match = re.match(r"(\w+)\('([^']+)'\)", func_call)
@@ -220,18 +238,13 @@ class ScenarioExecutor:
         except Exception as e:
             logger.warning(f"Failed to unload model {model}: {e}")
     
-    def _validate_action_template(self, action_template: Dict[str, Any], params: Dict[str, Any]):
-        """Validate action template parameters"""
-        # Check if all required inputs are provided
-        input_required = action_template.get('inputRequired', [])
-        for required_param in input_required:
-            if required_param not in params:
-                raise ActionError(f"Missing required parameter: {required_param}")
+    def _validate_action_params(self, prompt_template: str, params: Dict[str, Any]) -> None:
+        """Validate that all template variables have corresponding parameters"""
+        required_vars = TemplateEngine.extract_variables(prompt_template)
         
-        # Validate action type if specified
-        action_type = action_template.get('type', 'prompt')
-        if action_type not in ['prompt']:  # Add more types as needed
-            raise ActionError(f"Unsupported action type: {action_type}")
+        missing = [var for var in required_vars if var not in params]
+        if missing:
+            raise ActionError(f"Missing required parameters: {', '.join(missing)}")
     
     async def execute(self):
         """Execute the scenario"""
@@ -262,15 +275,15 @@ class ScenarioExecutor:
         if context is None:
             context = {}
         
-        for step in steps:
-            await self._execute_step(step, context)
+        for i, step in enumerate(steps):
+            await self._execute_step(step, context, step_index=i)
     
-    async def _execute_step(self, step: Dict[str, Any], context: Dict[str, Any]):
+    async def _execute_step(self, step: Dict[str, Any], context: Dict[str, Any], step_index: int = 0):
         """Execute a single step"""
-        step_id = step.get('id', 'unnamed')
+        step_id = step.get('id', f'step_{step_index}')
         action = step['action']
         
-        logger.info(f"Executing step: {step_id} (action: {action})")
+        logger.info(f"Executing: {action} ({step_id})")
         
         # Build context for template substitution
         template_context = {
@@ -287,7 +300,7 @@ class ScenarioExecutor:
         elif action == 'saveToFile':
             await self._save_to_file(step, template_context)
         elif action in self.scenario['actionTemplates']:
-            await self._execute_action_template(step, template_context)
+            await self._execute_action_template(step, template_context, step_id)
         else:
             raise ActionError(f"Unknown action: {action}")
     
@@ -314,7 +327,7 @@ class ScenarioExecutor:
         self.agents[instance_name] = agent
         logger.info(f"Created agent: {instance_name} (model: {agent.model})")
     
-    async def _execute_action_template(self, step: Dict[str, Any], context: Dict[str, Any]):
+    async def _execute_action_template(self, step: Dict[str, Any], context: Dict[str, Any], step_id: str):
         """Execute an action template"""
         action_name = step['action']
         agent_name = step.get('agent')
@@ -326,8 +339,9 @@ class ScenarioExecutor:
         agent = self.agents[agent_name]
         action_template = self.scenario['actionTemplates'][action_name]
         
-        # Validate action template parameters
-        self._validate_action_template(action_template, params)
+        # Validate parameters against template variables
+        prompt_template = action_template['promptTemplate']
+        self._validate_action_params(prompt_template, params)
         
         # Ensure model is loaded
         self._ensure_model_loaded(agent.model)
@@ -341,7 +355,6 @@ class ScenarioExecutor:
                 substituted_params[key] = value
         
         # Build prompt from template
-        prompt_template = action_template['promptTemplate']
         prompt = TemplateEngine.substitute(prompt_template, substituted_params)
         
         # Get timeout from config (with default)
@@ -352,7 +365,7 @@ class ScenarioExecutor:
         logger.info(f"Agent {agent_name} executing: {action_name}")
         result = await agent.query(prompt, timeout=timeout)
         
-        # Store output
+        # Store output if specified
         if 'output' in step:
             self.outputs[step['output']] = result
             logger.debug(f"Stored output '{step['output']}': {len(result)} chars")
@@ -360,7 +373,7 @@ class ScenarioExecutor:
         # Save intermediate outputs if configured
         if self.scenario.get('config', {}).get('saveIntermediateOutputs', False):
             output_dir = Path(self.scenario['config']['outputDirectory'])
-            output_file = output_dir / f"{step.get('id', action_name)}_{agent_name}.md"
+            output_file = output_dir / f"{step_id}_{agent_name}.md"
             output_file.write_text(result, encoding='utf-8')
     
     async def _execute_loop(self, step: Dict[str, Any], context: Dict[str, Any]):
