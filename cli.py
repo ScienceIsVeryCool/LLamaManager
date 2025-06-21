@@ -8,6 +8,7 @@ import argparse
 import json
 import logging
 import sys
+import copy
 from pathlib import Path
 from typing import Optional, Dict, Any
 from scenario_engine import ScenarioExecutor, ScenarioError
@@ -101,15 +102,11 @@ def create_example_scenario(output_path: str) -> None:
         },
         "actionTemplates": {
             "writeCode": {
-                "type": "prompt",
-                "promptTemplate": "Write a Python function that {{task}}",
-                "outputCapture": "full"
+                "promptTemplate": "Write a Python function that {{task}}"
             },
             "reviewCode": {
-                "type": "prompt",
                 "promptTemplate": "Review this code and suggest improvements:\n\n{{code}}",
-                "inputRequired": ["code"],
-                "outputCapture": "full"
+                "inputRequired": ["code"]
             }
         },
         "execution": [
@@ -150,7 +147,8 @@ def create_example_scenario(output_path: str) -> None:
         "config": {
             "logLevel": "info",
             "saveIntermediateOutputs": True,
-            "outputDirectory": "./results"
+            "outputDirectory": "./results",
+            "queryTimeout": 300
         }
     }
     
@@ -158,6 +156,19 @@ def create_example_scenario(output_path: str) -> None:
         json.dump(example, f, indent=2)
     
     print(f"Created example scenario: {output_path}")
+
+
+def update_output_directory(scenario: Dict[str, Any], iteration: int) -> Dict[str, Any]:
+    """Update the output directory for the current iteration"""
+    scenario_copy = copy.deepcopy(scenario)
+    
+    if 'config' in scenario_copy and 'outputDirectory' in scenario_copy['config']:
+        original_dir = scenario_copy['config']['outputDirectory']
+        # Remove trailing slash if present
+        original_dir = original_dir.rstrip('/')
+        scenario_copy['config']['outputDirectory'] = f"{original_dir}_{iteration}"
+    
+    return scenario_copy
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -168,6 +179,7 @@ def create_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   %(prog)s scenario.json
+  %(prog)s scenario.json 3
   %(prog)s scenario.json --verbose
   %(prog)s --validate scenario.json
   %(prog)s --create-example my_scenario.json
@@ -176,6 +188,9 @@ Examples:
     
     parser.add_argument('scenario', nargs='?',
                        help='Path to scenario JSON file')
+    
+    parser.add_argument('repetitions', nargs='?', type=int, default=1,
+                       help='Number of times to run the scenario (default: 1)')
     
     parser.add_argument('--validate', '-c', action='store_true',
                        help='Validate scenario file without executing')
@@ -198,6 +213,55 @@ Examples:
     return parser
 
 
+async def execute_single_iteration(scenario_path: str, scenario: Dict[str, Any], iteration: int, total_iterations: int, logger) -> bool:
+    """Execute a single iteration of the scenario. Returns True if successful."""
+    try:
+        logger.info(f"Starting iteration {iteration}/{total_iterations}")
+        
+        # Update scenario with iteration-specific output directory
+        iteration_scenario = update_output_directory(scenario, iteration)
+        
+        # Create a temporary scenario file for this iteration
+        temp_scenario_path = f"{scenario_path}.temp_iter_{iteration}"
+        
+        try:
+            with open(temp_scenario_path, 'w') as f:
+                json.dump(iteration_scenario, f, indent=2)
+            
+            # Execute the scenario
+            executor = ScenarioExecutor(temp_scenario_path)
+            await executor.execute()
+            
+            logger.info(f"✓ Iteration {iteration}/{total_iterations} completed successfully")
+            
+            # Show output location
+            config = iteration_scenario.get('config', {})
+            if config.get('saveIntermediateOutputs'):
+                output_dir = config.get('outputDirectory', './results')
+                logger.info(f"  Outputs saved to: {output_dir}")
+            
+            return True
+            
+        finally:
+            # Clean up temporary file
+            try:
+                Path(temp_scenario_path).unlink()
+            except FileNotFoundError:
+                pass
+            
+    except ScenarioError as e:
+        logger.error(f"Iteration {iteration}/{total_iterations} failed - Scenario error: {e}")
+        return False
+        
+    except KeyboardInterrupt:
+        logger.warning(f"Iteration {iteration}/{total_iterations} cancelled by user")
+        raise  # Re-raise to stop all iterations
+        
+    except Exception as e:
+        logger.exception(f"Iteration {iteration}/{total_iterations} failed - Unexpected error: {e}")
+        return False
+
+
 async def main():
     """Main CLI entry point"""
     parser = create_parser()
@@ -213,6 +277,11 @@ async def main():
         parser.print_help()
         sys.exit(1)
     
+    # Validate repetitions argument
+    if args.repetitions < 1:
+        print("Error: Number of repetitions must be at least 1", file=sys.stderr)
+        sys.exit(1)
+    
     # Setup logging
     setup_logging(args.verbose, args.quiet)
     logger = logging.getLogger(__name__)
@@ -225,40 +294,79 @@ async def main():
     # Handle info display
     if args.info:
         print_scenario_info(scenario)
+        if args.repetitions > 1:
+            print(f"Will run {args.repetitions} iterations with separate output directories")
         return
     
     # Handle validation only
     if args.validate:
         print(f"✓ Scenario file is valid: {args.scenario}")
+        if args.repetitions > 1:
+            print(f"Will run {args.repetitions} iterations")
         return
     
     # Handle dry run
     if args.dry_run:
         print(f"Dry run of scenario: {args.scenario}")
+        if args.repetitions > 1:
+            print(f"Number of iterations: {args.repetitions}")
         print_scenario_info(scenario)
         print("Execution steps:")
         for i, step in enumerate(scenario['execution'], 1):
             print(f"  {i}. {step.get('id', 'unnamed')} - Action: {step['action']}")
+        
+        if args.repetitions > 1:
+            base_output_dir = scenario.get('config', {}).get('outputDirectory', './results')
+            print(f"\nOutput directories that will be created:")
+            for i in range(1, args.repetitions + 1):
+                print(f"  {base_output_dir}_{i}")
         return
     
-    # Execute scenario
+    # Execute scenario iterations
     try:
-        logger.info(f"Executing scenario: {args.scenario}")
+        if args.repetitions == 1:
+            logger.info(f"Executing scenario: {args.scenario}")
+        else:
+            logger.info(f"Executing scenario: {args.scenario} ({args.repetitions} iterations)")
         
-        executor = ScenarioExecutor(args.scenario)
-        await executor.execute()
+        successful_iterations = 0
+        failed_iterations = 0
         
-        print("\n✓ Scenario execution completed successfully")
+        for iteration in range(1, args.repetitions + 1):
+            success = await execute_single_iteration(
+                args.scenario, scenario, iteration, args.repetitions, logger
+            )
+            
+            if success:
+                successful_iterations += 1
+            else:
+                failed_iterations += 1
+            
+            # Add a small delay between iterations to ensure clean separation
+            if iteration < args.repetitions:
+                await asyncio.sleep(1)
         
-        # Show output location if configured
-        config = scenario.get('config', {})
-        if config.get('saveIntermediateOutputs'):
-            output_dir = config.get('outputDirectory', './results')
-            print(f"  Outputs saved to: {output_dir}")
-        
-    except ScenarioError as e:
-        logger.error(f"Scenario error: {e}")
-        sys.exit(1)
+        # Summary
+        if args.repetitions == 1:
+            if successful_iterations == 1:
+                print("\n✓ Scenario execution completed successfully")
+            else:
+                print("\n✗ Scenario execution failed")
+                sys.exit(1)
+        else:
+            print(f"\n=== Execution Summary ===")
+            print(f"Total iterations: {args.repetitions}")
+            print(f"Successful: {successful_iterations}")
+            print(f"Failed: {failed_iterations}")
+            
+            if successful_iterations == args.repetitions:
+                print("✓ All iterations completed successfully")
+            elif successful_iterations > 0:
+                print(f"⚠ {successful_iterations} of {args.repetitions} iterations completed successfully")
+                sys.exit(1)
+            else:
+                print("✗ All iterations failed")
+                sys.exit(1)
         
     except KeyboardInterrupt:
         print("\nOperation cancelled by user", file=sys.stderr)

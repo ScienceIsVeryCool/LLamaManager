@@ -200,14 +200,38 @@ class ScenarioExecutor:
     def _unload_model(self, model: str):
         """Unload a model from memory"""
         try:
+            # Try to get the Ollama client's base URL, fallback to localhost
+            base_url = "http://localhost:11434"
+            try:
+                # Check if we can get the base URL from the client
+                client = ollama.Client()
+                if hasattr(client, '_base_url'):
+                    base_url = client._base_url
+            except:
+                pass  # Use default localhost
+                
             import requests
             requests.post(
-                "http://localhost:11434/api/generate",
+                f"{base_url}/api/generate",
                 json={"model": model, "keep_alive": 0},
                 timeout=30
             )
+            logger.debug(f"Successfully unloaded model: {model}")
         except Exception as e:
             logger.warning(f"Failed to unload model {model}: {e}")
+    
+    def _validate_action_template(self, action_template: Dict[str, Any], params: Dict[str, Any]):
+        """Validate action template parameters"""
+        # Check if all required inputs are provided
+        input_required = action_template.get('inputRequired', [])
+        for required_param in input_required:
+            if required_param not in params:
+                raise ActionError(f"Missing required parameter: {required_param}")
+        
+        # Validate action type if specified
+        action_type = action_template.get('type', 'prompt')
+        if action_type not in ['prompt']:  # Add more types as needed
+            raise ActionError(f"Unsupported action type: {action_type}")
     
     async def execute(self):
         """Execute the scenario"""
@@ -302,6 +326,9 @@ class ScenarioExecutor:
         agent = self.agents[agent_name]
         action_template = self.scenario['actionTemplates'][action_name]
         
+        # Validate action template parameters
+        self._validate_action_template(action_template, params)
+        
         # Ensure model is loaded
         self._ensure_model_loaded(agent.model)
         
@@ -317,9 +344,13 @@ class ScenarioExecutor:
         prompt_template = action_template['promptTemplate']
         prompt = TemplateEngine.substitute(prompt_template, substituted_params)
         
+        # Get timeout from config (with default)
+        config = self.scenario.get('config', {})
+        timeout = config.get('queryTimeout', 300)
+        
         # Execute query
         logger.info(f"Agent {agent_name} executing: {action_name}")
-        result = await agent.query(prompt)
+        result = await agent.query(prompt, timeout=timeout)
         
         # Store output
         if 'output' in step:
