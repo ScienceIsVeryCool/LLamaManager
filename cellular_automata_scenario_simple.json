@@ -7,13 +7,13 @@
   
   "agentTemplates": {
     "juniorDev": {
-      "model": "gemma3:4b",
+      "model": "gemma3:12b",
       "temperature": 0.7,
       "systemPrompt": "You are a Junior Software Engineer who writes clean, simple Python code. Focus on creating working solutions using libraries where appropriate.",
       "defaultContext": "rolling"
     },
     "seniorReviewer": {
-      "model": "gemma3:4b", 
+      "model": "gemma3:12b", 
       "temperature": 0.3,
       "systemPrompt": "You are a Senior Engineer who provides blunt, actionable feedback. Be concise and direct. Focus on critical issues only."
     }
@@ -93,7 +93,7 @@
     },
     {
       "action": "loop",
-      "iterations": 5,
+      "iterations": 3,
       "steps": [
         {
           "action": "reviseCode",

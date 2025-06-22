@@ -10,6 +10,7 @@ A clean, scenario-driven system for orchestrating multi-agent conversations with
 - **Flexible data flow**: Pass outputs between agents using template variables
 - **Loop support**: Iterate actions with variable substitution
 - **Context management**: Control how agents maintain conversation history
+- **Automatic context window management**: Prevents context overflow by trimming old messages
 
 ## Quick Start
 
@@ -68,7 +69,8 @@ python cli.py my_scenario.json
     "logLevel": "info",
     "outputDirectory": "./results",
     "saveIntermediateOutputs": false,
-    "queryTimeout": 300
+    "queryTimeout": 300,
+    "maxContextTokens": 8000  // Optional: max tokens before trimming context
   }
 }
 ```
@@ -129,6 +131,15 @@ Saves content to a file:
     "content": "{{outputs.someOutput}}",
     "filename": "output.txt"
   }
+}
+```
+
+### clearContext
+Clears conversation history for an agent:
+```json
+{
+  "action": "clearContext",
+  "agent": "agent1"
 }
 ```
 
@@ -258,3 +269,31 @@ Here's a simple code review scenario:
 3. **Use descriptive output names**: Instead of `output1`, use names like `initial_code` or `review_feedback`
 4. **Start simple**: Test with small scenarios before building complex workflows
 5. **Use intermediate outputs**: Enable `saveIntermediateOutputs` in config for debugging
+6. **Context window management**: The system automatically trims old messages if approaching token limits
+7. **Clear context strategically**: Use `clearContext` action to reset agent memory when needed
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Nested template variables**: Avoid patterns like `{{outputs.name_{{iteration}}}}`. Instead, use functions like `{{lastOutput('agent')}}` or restructure your approach.
+
+2. **Context overflow**: If agents are having issues with long conversations, try:
+   - Setting `maxContextTokens` to a lower value in config
+   - Using `clearContext` action between major phases
+   - Setting `defaultContext: "rolling"` instead of `"append"`
+
+3. **Memory issues with large models**: The system only loads one model at a time, but ensure Ollama has enough memory allocated.
+
+4. **Slow execution**: 
+   - Reduce `temperature` for more deterministic outputs
+   - Set lower `queryTimeout` values to fail faster
+   - Use smaller models for iterative tasks
+
+## Advanced Examples
+
+The repository includes three example scenarios:
+
+1. **cellular_automata_scenario_simple.json**: Basic iterative development with one developer and reviewer
+2. **cellular_automata_competitive.json**: Two developers with different personalities compete, with a senior reviewer providing feedback through multiple iterations  
+3. **cellular_automata_pyramid.json**: Tournament-style development where four developers compete in rounds, with a senior developer improving the winning design and an architect providing final approval
