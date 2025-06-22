@@ -55,8 +55,50 @@ class AgentInstance:
             self._client = ollama.Client()
         return self._client
     
-    async def query(self, prompt: str, timeout: int = 300) -> str:
-        """Send query to model with timeout"""
+    def _estimate_tokens(self, text: str) -> int:
+        """Rough estimation of token count (approximately 4 chars per token)"""
+        return len(text) // 4
+    
+    def _trim_messages_to_fit(self, messages: List[Dict[str, str]], max_tokens: int = 8000) -> List[Dict[str, str]]:
+        """Trim messages from the beginning to fit within token limit"""
+        if not messages:
+            return messages
+            
+        # Always keep system prompt if present
+        system_messages = [m for m in messages if m['role'] == 'system']
+        other_messages = [m for m in messages if m['role'] != 'system']
+        
+        # Estimate current token usage
+        total_tokens = sum(self._estimate_tokens(m['content']) for m in messages)
+        
+        if total_tokens <= max_tokens:
+            return messages
+        
+        logger.warning(f"Context window approaching limit ({total_tokens} estimated tokens), trimming history for agent {self.name}")
+        
+        # Keep system messages and trim from the beginning of other messages
+        trimmed_messages = system_messages.copy()
+        
+        # Always keep the last message (the current prompt) if it exists
+        current_prompt = None
+        if other_messages and other_messages[-1]['role'] == 'user':
+            current_prompt = other_messages[-1]
+            other_messages = other_messages[:-1]
+        
+        # Remove oldest messages until we fit
+        while other_messages and total_tokens > max_tokens:
+            removed = other_messages.pop(0)
+            total_tokens -= self._estimate_tokens(removed['content'])
+        
+        # Add back remaining messages
+        trimmed_messages.extend(other_messages)
+        if current_prompt:
+            trimmed_messages.append(current_prompt)
+        
+        return trimmed_messages
+    
+    async def query(self, prompt: str, timeout: int = 300, max_context_tokens: int = 8000) -> str:
+        """Send query to model with timeout and context window management"""
         messages = []
         
         if self.system_prompt:
@@ -69,6 +111,9 @@ class AgentInstance:
             messages.extend(self.conversation_history[-10:])
         
         messages.append({"role": "user", "content": prompt})
+        
+        # Trim messages if needed to fit context window
+        messages = self._trim_messages_to_fit(messages, max_context_tokens)
         
         try:
             # Add timeout to the chat call
@@ -299,6 +344,8 @@ class ScenarioExecutor:
             await self._execute_loop(step, template_context)
         elif action == 'saveToFile':
             await self._save_to_file(step, template_context)
+        elif action == 'clearContext':
+            await self._clear_context(step, template_context)
         elif action in self.scenario['actionTemplates']:
             await self._execute_action_template(step, template_context, step_id)
         else:
@@ -360,10 +407,11 @@ class ScenarioExecutor:
         # Get timeout from config (with default)
         config = self.scenario.get('config', {})
         timeout = config.get('queryTimeout', 300)
+        max_context = config.get('maxContextTokens', 8000)
         
         # Execute query
         logger.info(f"Agent {agent_name} executing: {action_name}")
-        result = await agent.query(prompt, timeout=timeout)
+        result = await agent.query(prompt, timeout=timeout, max_context_tokens=max_context)
         
         # Store output if specified
         if 'output' in step:
@@ -398,6 +446,15 @@ class ScenarioExecutor:
                     if isinstance(value, str):
                         # Substitute iteration variable
                         value = value.replace('{{iteration}}', str(i + 1))
+                    elif isinstance(value, dict):
+                        # Recursively process nested dictionaries (like params)
+                        processed_dict = {}
+                        for k, v in value.items():
+                            if isinstance(v, str):
+                                processed_dict[k] = v.replace('{{iteration}}', str(i + 1))
+                            else:
+                                processed_dict[k] = v
+                        value = processed_dict
                     processed_step[key] = value
                 processed_steps.append(processed_step)
             
@@ -416,6 +473,19 @@ class ScenarioExecutor:
         
         output_path.write_text(content, encoding='utf-8')
         logger.info(f"Saved output to: {output_path}")
+    
+    async def _clear_context(self, step: Dict[str, Any], context: Dict[str, Any]):
+        """Clear conversation history for specified agent"""
+        agent_name = step.get('agent')
+        
+        if not agent_name:
+            raise ActionError("clearContext requires an 'agent' field")
+        
+        if agent_name not in self.agents:
+            raise ActionError(f"Unknown agent: {agent_name}")
+        
+        self.agents[agent_name].clear_context()
+        logger.info(f"Cleared context for agent: {agent_name}")
 
 
 async def main():
