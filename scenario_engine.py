@@ -430,17 +430,57 @@ class ScenarioExecutor:
                 output = stdout.decode('utf-8', errors='replace')
                 return_code = result.returncode
             except asyncio.TimeoutError:
-                # Kill the process if it times out
-                result.terminate()
+                # Two-step process killing with escalating force
+                logger.warning(f"Python script timed out after 60 seconds, attempting to kill process {result.pid}")
+                
+                # Step 1: Send SIGINT (Ctrl+C equivalent) - gentle shutdown
                 try:
-                    await asyncio.wait_for(result.wait(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    result.kill()
-                    await result.wait()
+                    import signal
+                    result.send_signal(signal.SIGINT)
+                    logger.debug(f"Sent SIGINT to process {result.pid}")
+                    
+                    # Wait 3 seconds for graceful shutdown
+                    try:
+                        await asyncio.wait_for(result.wait(), timeout=3.0)
+                        logger.info(f"Process {result.pid} exited gracefully after SIGINT")
+                    except asyncio.TimeoutError:
+                        # Step 2: Send SIGTERM (terminate) - more forceful
+                        logger.debug(f"SIGINT failed, sending SIGTERM to process {result.pid}")
+                        result.terminate()
+                        
+                        try:
+                            await asyncio.wait_for(result.wait(), timeout=3.0)
+                            logger.info(f"Process {result.pid} exited after SIGTERM")
+                        except asyncio.TimeoutError:
+                            # Step 3: Send SIGKILL (kill) - most forceful
+                            logger.debug(f"SIGTERM failed, sending SIGKILL to process {result.pid}")
+                            result.kill()
+                            
+                            try:
+                                await asyncio.wait_for(result.wait(), timeout=2.0)
+                                logger.info(f"Process {result.pid} killed with SIGKILL")
+                            except asyncio.TimeoutError:
+                                # Last resort: use pkill to find and kill by command pattern
+                                logger.warning(f"SIGKILL failed, attempting pkill as last resort")
+                                await self._force_kill_python_process(command, result.pid)
+                                
+                                # Final wait attempt
+                                try:
+                                    await asyncio.wait_for(result.wait(), timeout=1.0)
+                                except asyncio.TimeoutError:
+                                    logger.error(f"Failed to kill process {result.pid} completely")
+                
+                except Exception as e:
+                    logger.error(f"Error during process killing: {e}")
+                    # Fallback to original method
+                    try:
+                        result.kill()
+                        await result.wait()
+                    except:
+                        pass
                 
                 output = "EXECUTION TIMED OUT AFTER 60 SECONDS\n"
                 return_code = -1
-            
             # Prepare output content
             output_content = f"=== Python Script Execution Results ===\n"
             output_content += f"Command: {command}\n"
@@ -495,6 +535,7 @@ class ScenarioExecutor:
                 input_value.endswith('.py') or 
                 input_value.endswith('.txt') or 
                 input_value.endswith('.md') or
+                input_value.endswith('.json') or
                 input_value.endswith('.log') or
                 '/' in input_value or
                 '\\' in input_value
@@ -502,16 +543,24 @@ class ScenarioExecutor:
                 try:
                     content = self._read_file(self.output_dir / input_value)
                     processed_inputs.append(content)
+                    logger.debug(f"Read file '{input_value}': {len(content)} characters")
                 except ActionError:
                     # If file doesn't exist, treat as plain text
                     processed_inputs.append(input_value)
+                    logger.debug(f"File '{input_value}' not found, treating as literal text")
             else:
                 processed_inputs.append(str(input_value))
+                logger.debug(f"Using literal input: '{input_value}'")
         
         # Build prompt from template
         prompt = prompt_template
         for i, input_content in enumerate(processed_inputs, 1):
-            prompt = prompt.replace(f'{{{{{i}}}}}', input_content)
+            placeholder = f'{{{{{i}}}}}'
+            if placeholder in prompt:
+                # Log substitution for debugging
+                content_preview = input_content[:100] + "..." if len(input_content) > 100 else input_content
+                logger.debug(f"Substituting {placeholder} with content: {content_preview}")
+                prompt = prompt.replace(placeholder, input_content)
         
         # Get timeout from config
         config = self.scenario.get('config', {})
@@ -520,6 +569,7 @@ class ScenarioExecutor:
         
         # Execute query
         logger.info(f"Agent {agent_name} executing: {action_name}")
+        logger.debug(f"Final prompt length: {len(prompt)} characters")
         result = await agent.query(prompt, timeout=timeout, max_context_tokens=max_context)
         
         # Save output if specified
