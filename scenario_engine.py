@@ -461,13 +461,31 @@ class ScenarioExecutor:
             await self._execute_steps(processed_steps, loop_context)
     
     async def _save_to_file(self, step: Dict[str, Any], context: Dict[str, Any]):
-        """Save content to file"""
+        """Save content to file, with special handling for 'python' format."""
         params = step['params']
         
         # Substitute template variables
         content = TemplateEngine.substitute(params['content'], context)
         filename = params['filename']
-        
+        file_format = params.get('format') # Get the 'format' parameter
+
+        # Handle 'python' format: extract code from markdown block and ensure .py extension
+        if file_format == "python":
+            # Regex to find the first ```python ... ``` block
+            match = re.search(r"```python\n(.*?)\n```", content, re.DOTALL)
+            if match:
+                content = match.group(1).strip() # Extract the code block content
+                logger.info(f"Extracted Python code block from markdown for '{filename}'.")
+            else:
+                logger.warning(f"No Python code block found in content for '{filename}' with format 'python'. Saving raw content.")
+                # Optionally, you could raise an ActionError here if a code block is strictly required:
+                # raise ActionError(f"No 'python' markdown block found in content for file '{filename}'.")
+            
+            # Ensure the filename ends with .py
+            if not filename.endswith(".py"):
+                filename = f"{Path(filename).stem}.py"
+                logger.info(f"Adjusted filename to '{filename}' for Python format.")
+
         output_dir = Path(self.scenario.get('config', {}).get('outputDirectory', './results'))
         output_path = output_dir / filename
         

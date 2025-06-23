@@ -104,10 +104,6 @@
           "output": "guidance_{{iteration}}"
         },
         {
-          "action": "clearContext",
-          "agent": "reviewer"
-        },
-        {
           "action": "improveBasedOnFeedback",
           "agent": "optimistic",
           "params": {
@@ -122,6 +118,10 @@
             "feedback": "{{lastOutput('reviewer')}}"
           },
           "output": "pragmatic_v{{iteration}}_improved"
+        },
+        {
+          "action": "clearContext",
+          "agent": "reviewer"
         }
       ]
     },
@@ -138,14 +138,16 @@
       "action": "saveToFile",
       "params": {
         "content": "# Optimistic Developer's Final Implementation\n\n{{lastOutput('optimistic')}}",
-        "filename": "cellular_automata_optimistic.py"
+        "filename": "cellular_automata_optimistic.py",
+        "format": "python"
       }
     },
     {
       "action": "saveToFile",
       "params": {
         "content": "# Pragmatic Developer's Final Implementation\n\n{{lastOutput('pragmatic')}}",
-        "filename": "cellular_automata_pragmatic.py"
+        "filename": "cellular_automata_pragmatic.py",
+        "format": "python"
       }
     },
     {
@@ -161,6 +163,6 @@
     "logLevel": "info",
     "saveIntermediateOutputs": true,
     "outputDirectory": "./cellular_competition_results",
-    "queryTimeout": 300
+    "queryTimeout": 1000
   }
 }
