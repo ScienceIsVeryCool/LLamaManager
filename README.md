@@ -1,16 +1,16 @@
 # Scenario-based Ollama Agent System
 
-A clean, scenario-driven system for orchestrating multi-agent conversations with Ollama models.
+A clean, human-readable system for orchestrating multi-agent conversations with Ollama models. Define complex agent interactions in simple JSON files and let the system handle the execution.
 
 ## Key Features
 
-- **JSON-based scenarios**: Define complex agent interactions in simple JSON
-- **Memory-efficient**: Only one model loaded at a time  
-- **Template system**: Reusable agent and action templates with automatic parameter validation
-- **Flexible data flow**: Pass outputs between agents using template variables
-- **Loop support**: Iterate actions with variable substitution
-- **Context management**: Control how agents maintain conversation history
-- **Automatic context window management**: Prevents context overflow by trimming old messages
+- **Simple JSON scenarios**: Easy-to-write, easy-to-understand configuration files
+- **File-based workflow**: All inputs and outputs are files - no complex variable tracking
+- **Multi-agent orchestration**: Coordinate multiple AI agents with different personalities
+- **Memory efficient**: Only one model loaded at a time
+- **Flexible context modes**: Control how agents remember conversations
+- **Automatic validation**: Catches configuration errors before execution
+- **Built-in iteration support**: Loop through workflows with automatic variable substitution
 
 ## Quick Start
 
@@ -24,53 +24,45 @@ python cli.py my_scenario.json
 
 ## Scenario Structure
 
+A scenario file has four main sections:
+
 ```json
 {
-  "scenario": {
+  "metadata": {
     "name": "My Scenario",
-    "version": "1.0"
+    "version": "1.0",
+    "description": "What this scenario does"
   },
   
-  "agentTemplates": {
-    "developer": {
+  "agents": {
+    "assistant": {
       "model": "gemma:2b",
       "temperature": 0.7,
-      "systemPrompt": "You are a helpful developer.",
-      "defaultContext": "clean"  // clean | append | rolling
+      "personality": "You are a helpful assistant.",
+      "contextType": "clean"  // clean | append | rolling
     }
   },
   
-  "actionTemplates": {
-    "writeCode": {
-      "promptTemplate": "Write {{language}} code that {{task}}"
+  "actions": {
+    "analyze": {
+      "prompt": "Analyze this {{1}} and provide insights about {{2}}"
     }
   },
   
-  "execution": [
+  "workflow": [
     {
-      "action": "createAgent",
-      "params": {
-        "template": "developer",
-        "instanceName": "dev1"
-      }
-    },
-    {
-      "action": "writeCode",
-      "agent": "dev1",
-      "params": {
-        "language": "Python",
-        "task": "sorts a list"
-      },
-      "output": "sorting_code"  // Optional: store output for later use
+      "action": "analyze",
+      "agent": "assistant",
+      "inputs": ["data.txt", "performance patterns"],
+      "output": "analysis.md"
     }
   ],
   
   "config": {
     "logLevel": "info",
     "outputDirectory": "./results",
-    "saveIntermediateOutputs": false,
     "queryTimeout": 300,
-    "maxContextTokens": 8000  // Optional: max tokens before trimming context
+    "maxContextTokens": 8000
   }
 }
 ```
@@ -78,80 +70,168 @@ python cli.py my_scenario.json
 ## Core Concepts
 
 ### Agents
-Agents are instances created from templates. Each agent maintains its own conversation history and can use different models.
+Define AI agents with specific models and personalities:
 
-### Actions
-Actions are reusable prompts with variable substitution. The system automatically validates that all template variables have corresponding parameters.
-
-### Outputs
-Any action can store its output by adding an `output` field. These outputs can be referenced later using `{{outputs.name}}`.
-
-### Context Modes
-- **clean**: Each query starts fresh (default)
-- **append**: Full conversation history is maintained
-- **rolling**: Keep last 10 messages for context
-
-## Built-in Actions
-
-### createAgent
-Creates an agent instance:
 ```json
-{
-  "action": "createAgent",
-  "params": {
-    "template": "templateName",
-    "instanceName": "agent1"
+"agents": {
+  "developer": {
+    "model": "gemma:2b",
+    "temperature": 0.7,
+    "personality": "You are an expert Python developer who writes clean, efficient code.",
+    "contextType": "rolling"
+  },
+  "reviewer": {
+    "model": "gemma:2b", 
+    "temperature": 0.3,
+    "personality": "You are a thorough code reviewer who provides constructive feedback.",
+    "contextType": "clean"
   }
 }
 ```
 
-### loop
-Repeats steps with an iteration counter:
+**Context Types:**
+- `clean`: Each query starts fresh
+- `append`: Full conversation history is maintained
+- `rolling`: Keep last 10 messages for context
+
+### Actions
+Actions are reusable prompt templates with numbered placeholders:
+
+```json
+"actions": {
+  "writeCode": {
+    "prompt": "Write a {{1}} function that {{2}}. Use best practices and include docstrings."
+  },
+  "reviewCode": {
+    "prompt": "Review this {{1}} code:\n\n{{2}}\n\nFocus on: {{3}}"
+  }
+}
+```
+
+### Workflow
+The workflow defines the sequence of actions to execute:
+
+```json
+"workflow": [
+  {
+    "action": "writeCode",
+    "agent": "developer",
+    "inputs": ["Python", "calculates fibonacci numbers"],
+    "output": "fibonacci.py",
+    "format": "python"  // Optional: extracts code from markdown
+  },
+  {
+    "action": "reviewCode",
+    "agent": "reviewer",
+    "inputs": ["Python", "fibonacci.py", "efficiency and correctness"],
+    "output": "review.md"
+  }
+]
+```
+
+### File I/O
+The system automatically handles file reading and writing:
+- **Reading**: If an input looks like a filename (has extension or path separators), it's read automatically
+- **Writing**: The `output` field specifies where to save the result
+- **Format**: Use `"format": "python"` to extract code blocks from markdown responses
+
+## Built-in Actions
+
+### Loop
+Execute steps multiple times with automatic variable substitution:
+
 ```json
 {
   "action": "loop",
   "iterations": 3,
   "steps": [
     {
-      "id": "step_{{iteration}}",  // {{iteration}} is replaced with 1, 2, 3
-      "action": "someAction",
-      "agent": "agent1",
-      "params": {}
+      "action": "generate",
+      "agent": "creator",
+      "inputs": ["Create variant {{iteration}} of the design"],
+      "output": "design_v{{iteration}}.txt"
     }
   ]
 }
 ```
 
-### saveToFile
-Saves content to a file:
-```json
-{
-  "action": "saveToFile",
-  "params": {
-    "content": "{{outputs.someOutput}}",
-    "filename": "output.txt"
-  }
-}
-```
+### Clear Context
+Reset an agent's conversation history:
 
-### clearContext
-Clears conversation history for an agent:
 ```json
 {
   "action": "clearContext",
-  "agent": "agent1"
+  "agent": "reviewer"
 }
 ```
 
-## Template Variables
+## Complete Example: Code Review Pipeline
 
-### Basic Substitution
-- `{{paramName}}` - Replaced with parameter value
-- `{{outputs.outputName}}` - Access stored output
-- `{{iteration}}` - Current loop iteration (inside loops)
-
-### Functions
-- `{{lastOutput('agentName')}}` - Get the last output from an agent
+```json
+{
+  "metadata": {
+    "name": "Code Review Pipeline",
+    "version": "1.0",
+    "description": "Iterative code development with review"
+  },
+  
+  "agents": {
+    "developer": {
+      "model": "gemma:2b",
+      "temperature": 0.7,
+      "personality": "You are a Python developer who values clean, efficient code.",
+      "contextType": "append"
+    },
+    "reviewer": {
+      "model": "gemma:2b",
+      "temperature": 0.3,
+      "personality": "You are a senior engineer providing thorough code reviews.",
+      "contextType": "clean"
+    }
+  },
+  
+  "actions": {
+    "implement": {
+      "prompt": "Implement a {{1}} that {{2}}. Include proper error handling and documentation."
+    },
+    "review": {
+      "prompt": "Review this code and provide specific improvement suggestions:\n\n{{1}}"
+    },
+    "improve": {
+      "prompt": "Improve this code based on the review feedback:\n\nOriginal Code:\n{{1}}\n\nReview Feedback:\n{{2}}"
+    }
+  },
+  
+  "workflow": [
+    {
+      "action": "implement",
+      "agent": "developer",
+      "inputs": ["Python class", "manages a task queue with priorities"],
+      "output": "task_queue_v1.py",
+      "format": "python"
+    },
+    {
+      "action": "review",
+      "agent": "reviewer",
+      "inputs": ["task_queue_v1.py"],
+      "output": "review.md"
+    },
+    {
+      "action": "improve",
+      "agent": "developer",
+      "inputs": ["task_queue_v1.py", "review.md"],
+      "output": "task_queue_final.py",
+      "format": "python"
+    }
+  ],
+  
+  "config": {
+    "outputDirectory": "./code_review_output",
+    "logLevel": "info",
+    "queryTimeout": 300
+  }
+}
+```
 
 ## CLI Usage
 
@@ -159,141 +239,140 @@ Clears conversation history for an agent:
 # Run a scenario
 python cli.py scenario.json
 
-# Run multiple times
+# Run multiple times (creates separate output directories)
 python cli.py scenario.json 3
 
-# Validate scenario
+# Validate scenario without executing
 python cli.py --validate scenario.json
 
-# Show scenario info
+# Show scenario information
 python cli.py --info scenario.json
 
-# Create example scenario
+# Create an example scenario
 python cli.py --create-example example.json
 
 # Dry run (show execution plan)
 python cli.py --dry-run scenario.json
+
+# Verbose output
+python cli.py scenario.json --verbose
+
+# Quiet mode (warnings and errors only)
+python cli.py scenario.json --quiet
 ```
 
-## Complete Example
+## Configuration Options
 
-Here's a simple code review scenario:
+### Agent Configuration
+- `model`: The Ollama model to use (e.g., "gemma:2b", "llama2", "mistral")
+- `temperature`: Creativity level (0.0 to 1.0)
+- `personality`: System prompt defining the agent's role
+- `contextType`: How conversation history is managed
+
+### Global Configuration
+- `logLevel`: Logging verbosity ("debug", "info", "warning", "error")
+- `outputDirectory`: Where to save output files
+- `queryTimeout`: Maximum seconds to wait for model responses
+- `maxContextTokens`: Maximum tokens before trimming conversation history
+
+## Tips & Best Practices
+
+1. **File Extensions**: Always include extensions (.py, .md, .txt) for better file handling
+2. **Action Design**: Keep actions focused on a single task for better reusability
+3. **Context Management**: Use `clearContext` between major workflow phases to avoid confusion
+4. **Temperature Settings**: Lower temperatures (0.3) for analytical tasks, higher (0.7+) for creative tasks
+5. **Error Handling**: The system validates agent and action names before execution
+6. **Output Organization**: Use descriptive filenames to track workflow progress
+
+## Advanced Example: Competitive Development
+
+Here's a more complex scenario with multiple agents competing:
 
 ```json
 {
-  "scenario": {
-    "name": "Code Review",
+  "metadata": {
+    "name": "Competitive Development",
     "version": "1.0"
   },
   
-  "agentTemplates": {
-    "developer": {
+  "agents": {
+    "dev1": {
       "model": "gemma:2b",
-      "temperature": 0.7,
-      "systemPrompt": "You write clean Python code."
+      "temperature": 0.8,
+      "personality": "You favor creative, elegant solutions.",
+      "contextType": "rolling"
     },
-    "reviewer": {
-      "model": "gemma:2b", 
+    "dev2": {
+      "model": "gemma:2b",
+      "temperature": 0.6,
+      "personality": "You favor simple, performant solutions.",
+      "contextType": "rolling"
+    },
+    "judge": {
+      "model": "gemma:2b",
       "temperature": 0.3,
-      "systemPrompt": "You provide constructive code reviews."
+      "personality": "You evaluate code solutions objectively.",
+      "contextType": "clean"
     }
   },
   
-  "actionTemplates": {
-    "implement": {
-      "promptTemplate": "Implement a {{type}} that {{description}}"
+  "actions": {
+    "solve": {
+      "prompt": "Solve this problem: {{1}}\n\nFocus on your strengths."
     },
-    "review": {
-      "promptTemplate": "Review this code:\n\n{{code}}\n\nFocus on: {{focus}}"
-    },
-    "revise": {
-      "promptTemplate": "Revise this code based on feedback:\n\nCode:\n{{code}}\n\nFeedback:\n{{feedback}}"
+    "evaluate": {
+      "prompt": "Compare these two solutions:\n\nSolution 1:\n{{1}}\n\nSolution 2:\n{{2}}\n\nWhich is better and why?"
     }
   },
   
-  "execution": [
+  "workflow": [
     {
-      "action": "createAgent",
-      "params": {"template": "developer", "instanceName": "dev"}
-    },
-    {
-      "action": "createAgent", 
-      "params": {"template": "reviewer", "instanceName": "reviewer"}
-    },
-    {
-      "action": "implement",
-      "agent": "dev",
-      "params": {
-        "type": "function",
-        "description": "calculates factorial"
-      },
-      "output": "initial_code"
-    },
-    {
-      "action": "review",
-      "agent": "reviewer",
-      "params": {
-        "code": "{{outputs.initial_code}}",
-        "focus": "efficiency and correctness"
-      },
-      "output": "review_feedback"
-    },
-    {
-      "action": "revise",
-      "agent": "dev",
-      "params": {
-        "code": "{{outputs.initial_code}}",
-        "feedback": "{{outputs.review_feedback}}"
-      },
-      "output": "final_code"
-    },
-    {
-      "action": "saveToFile",
-      "params": {
-        "content": "{{outputs.final_code}}",
-        "filename": "factorial.py"
-      }
+      "action": "loop",
+      "iterations": 3,
+      "steps": [
+        {
+          "action": "solve",
+          "agent": "dev1",
+          "inputs": ["implement a sorting algorithm (round {{iteration}})"],
+          "output": "solution1_round{{iteration}}.py",
+          "format": "python"
+        },
+        {
+          "action": "solve", 
+          "agent": "dev2",
+          "inputs": ["implement a sorting algorithm (round {{iteration}})"],
+          "output": "solution2_round{{iteration}}.py",
+          "format": "python"
+        },
+        {
+          "action": "evaluate",
+          "agent": "judge",
+          "inputs": ["solution1_round{{iteration}}.py", "solution2_round{{iteration}}.py"],
+          "output": "evaluation_round{{iteration}}.md"
+        }
+      ]
     }
-  ],
-  
-  "config": {
-    "outputDirectory": "./output"
-  }
+  ]
 }
 ```
 
-## Tips
-
-1. **IDs are optional**: Only add an `id` field if you need it for debugging or filenames
-2. **Parameter validation is automatic**: The system checks that all `{{variables}}` in templates have matching parameters
-3. **Use descriptive output names**: Instead of `output1`, use names like `initial_code` or `review_feedback`
-4. **Start simple**: Test with small scenarios before building complex workflows
-5. **Use intermediate outputs**: Enable `saveIntermediateOutputs` in config for debugging
-6. **Context window management**: The system automatically trims old messages if approaching token limits
-7. **Clear context strategically**: Use `clearContext` action to reset agent memory when needed
-
 ## Troubleshooting
 
-### Common Issues
+### File Not Found Errors
+- Ensure the file was created in a previous step
+- Check that you're using the correct filename with extension
+- Verify the output directory path
 
-1. **Nested template variables**: Avoid patterns like `{{outputs.name_{{iteration}}}}`. Instead, use functions like `{{lastOutput('agent')}}` or restructure your approach.
+### Input Count Mismatch
+- Count the {{1}}, {{2}}, etc. placeholders in your action prompt
+- Ensure your inputs list has exactly that many items
 
-2. **Context overflow**: If agents are having issues with long conversations, try:
-   - Setting `maxContextTokens` to a lower value in config
-   - Using `clearContext` action between major phases
-   - Setting `defaultContext: "rolling"` instead of `"append"`
+### Context Window Errors
+- Use `contextType: "rolling"` for long conversations
+- Add `clearContext` actions between major phases
+- Reduce `maxContextTokens` in config if needed
 
-3. **Memory issues with large models**: The system only loads one model at a time, but ensure Ollama has enough memory allocated.
-
-4. **Slow execution**: 
-   - Reduce `temperature` for more deterministic outputs
-   - Set lower `queryTimeout` values to fail faster
-   - Use smaller models for iterative tasks
-
-## Advanced Examples
-
-The repository includes three example scenarios:
-
-1. **cellular_automata_scenario_simple.json**: Basic iterative development with one developer and reviewer
-2. **cellular_automata_competitive.json**: Two developers with different personalities compete, with a senior reviewer providing feedback through multiple iterations  
-3. **cellular_automata_pyramid.json**: Tournament-style development where four developers compete in rounds, with a senior developer improving the winning design and an architect providing final approval
+### Model Loading Issues
+- Ensure the model is installed: `ollama pull model_name`
+- Check that Ollama is running: `ollama serve`
+- Verify model names match exactly (case-sensitive)

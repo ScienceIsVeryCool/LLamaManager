@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Scenario-based Ollama Agent Execution Engine
+Simplified Scenario-based Ollama Agent Execution Engine
 Processes JSON scenario files to orchestrate multi-agent interactions
 """
 
@@ -27,8 +27,8 @@ class ScenarioError(Exception):
     pass
 
 
-class TemplateError(ScenarioError):
-    """Raised when template substitution fails"""
+class ValidationError(ScenarioError):
+    """Raised when scenario validation fails"""
     pass
 
 
@@ -41,11 +41,10 @@ class ActionError(ScenarioError):
 class AgentInstance:
     """Runtime agent instance"""
     name: str
-    template_name: str
     model: str
     temperature: float
-    system_prompt: str
-    context_mode: str = "clean"  # clean, append, rolling
+    personality: str
+    context_type: str = "clean"  # clean, append, rolling
     conversation_history: List[Dict[str, str]] = field(default_factory=list)
     _client: Optional[ollama.Client] = None
     
@@ -101,12 +100,12 @@ class AgentInstance:
         """Send query to model with timeout and context window management"""
         messages = []
         
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
+        if self.personality:
+            messages.append({"role": "system", "content": self.personality})
         
-        if self.context_mode == "append":
+        if self.context_type == "append":
             messages.extend(self.conversation_history)
-        elif self.context_mode == "rolling" and self.conversation_history:
+        elif self.context_type == "rolling" and self.conversation_history:
             # Keep last 10 messages for rolling context
             messages.extend(self.conversation_history[-10:])
         
@@ -145,80 +144,6 @@ class AgentInstance:
     def clear_context(self):
         """Clear conversation history"""
         self.conversation_history.clear()
-    
-    def get_last_output(self) -> Optional[str]:
-        """Get last assistant response"""
-        for msg in reversed(self.conversation_history):
-            if msg["role"] == "assistant":
-                return msg["content"]
-        return None
-
-
-class TemplateEngine:
-    """Handles template variable substitution"""
-    
-    @staticmethod
-    def substitute(template: str, context: Dict[str, Any]) -> str:
-        """Substitute template variables with values from context"""
-        def replace_var(match):
-            var_path = match.group(1)
-            
-            # Handle function calls like lastOutput('agent')
-            if '(' in var_path:
-                return TemplateEngine._evaluate_function(var_path, context)
-            
-            # Handle dot notation like outputs.step_id
-            parts = var_path.split('.')
-            value = context
-            
-            for part in parts:
-                if isinstance(value, dict) and part in value:
-                    value = value[part]
-                else:
-                    raise TemplateError(f"Variable not found: {var_path}")
-            
-            return str(value)
-        
-        # Find all {{variable}} patterns
-        pattern = r'\{\{([^}]+)\}\}'
-        return re.sub(pattern, replace_var, template)
-    
-    @staticmethod
-    def extract_variables(template: str) -> List[str]:
-        """Extract all variable names from a template"""
-        pattern = r'\{\{([^}]+)\}\}'
-        matches = re.findall(pattern, template)
-        
-        variables = []
-        for match in matches:
-            # Skip function calls
-            if '(' in match:
-                continue
-            # Skip dot notation (these come from context like outputs.x)
-            if '.' in match:
-                continue
-            variables.append(match)
-        
-        return list(set(variables))  # Remove duplicates
-    
-    @staticmethod
-    def _evaluate_function(func_call: str, context: Dict[str, Any]) -> str:
-        """Evaluate template functions"""
-        match = re.match(r"(\w+)\('([^']+)'\)", func_call)
-        if not match:
-            raise TemplateError(f"Invalid function syntax: {func_call}")
-        
-        func_name, arg = match.groups()
-        
-        if func_name == "lastOutput":
-            agents = context.get('agents', {})
-            if arg in agents:
-                output = agents[arg].get_last_output()
-                if output:
-                    return output
-            raise TemplateError(f"No output found for agent: {arg}")
-        
-        raise TemplateError(f"Unknown function: {func_name}")
 
 
 class ScenarioExecutor:
@@ -227,18 +152,19 @@ class ScenarioExecutor:
     def __init__(self, scenario_path: str):
         self.scenario_path = scenario_path
         self.scenario = self._load_scenario()
+        self.output_dir = Path(self.scenario.get('config', {}).get('outputDirectory', './results'))
         self.agents: Dict[str, AgentInstance] = {}
-        self.outputs: Dict[str, str] = {}
         self.current_model: Optional[str] = None
+        self._validate_scenario()
         
     def _load_scenario(self) -> Dict[str, Any]:
-        """Load and validate scenario file"""
+        """Load and validate scenario file structure"""
         try:
             with open(self.scenario_path, 'r') as f:
                 scenario = json.load(f)
             
-            # Basic validation
-            required = ['agentTemplates', 'actionTemplates', 'execution']
+            # Basic structure validation
+            required = ['agents', 'actions', 'workflow']
             for key in required:
                 if key not in scenario:
                     raise ScenarioError(f"Missing required section: {key}")
@@ -249,6 +175,55 @@ class ScenarioExecutor:
             raise ScenarioError(f"Invalid JSON in scenario file: {e}")
         except FileNotFoundError:
             raise ScenarioError(f"Scenario file not found: {self.scenario_path}")
+    
+    def _validate_scenario(self):
+        """Validate scenario consistency"""
+        # Collect all defined agent names and action names
+        defined_agents = set(self.scenario['agents'].keys())
+        defined_actions = set(self.scenario['actions'].keys())
+        
+        # Check workflow steps
+        for i, step in enumerate(self.scenario['workflow']):
+            step_id = step.get('id', f'step_{i}')
+            
+            # Validate agent exists
+            if 'agent' in step:
+                agent_name = step['agent']
+                if agent_name not in defined_agents:
+                    raise ValidationError(f"Step '{step_id}': Unknown agent '{agent_name}'. Available agents: {', '.join(sorted(defined_agents))}")
+            
+            # Validate action exists
+            action_name = step.get('action')
+            if action_name and action_name not in ['createAgent', 'loop', 'clearContext']:
+                if action_name not in defined_actions:
+                    raise ValidationError(f"Step '{step_id}': Unknown action '{action_name}'. Available actions: {', '.join(sorted(defined_actions))}")
+                
+                # Validate input count matches placeholders in action prompt
+                action_prompt = self.scenario['actions'][action_name]['prompt']
+                placeholder_count = len(re.findall(r'\{\{(\d+)\}\}', action_prompt))
+                input_count = len(step.get('inputs', []))
+                
+                if input_count != placeholder_count:
+                    raise ValidationError(
+                        f"Step '{step_id}': Action '{action_name}' expects {placeholder_count} inputs but got {input_count}"
+                    )
+    
+    def _read_file(self, filepath: str) -> str:
+        """Read file from output directory or absolute path"""
+        path = Path(filepath)
+        
+        # If not absolute, check in output directory first
+        if not path.is_absolute():
+            output_path = self.output_dir / path
+            if output_path.exists():
+                path = output_path
+        
+        try:
+            return path.read_text(encoding='utf-8')
+        except FileNotFoundError:
+            raise ActionError(f"File not found: {filepath}")
+        except Exception as e:
+            raise ActionError(f"Error reading file {filepath}: {e}")
     
     def _ensure_model_loaded(self, model: str):
         """Ensure only one model is loaded at a time"""
@@ -263,15 +238,13 @@ class ScenarioExecutor:
     def _unload_model(self, model: str):
         """Unload a model from memory"""
         try:
-            # Try to get the Ollama client's base URL, fallback to localhost
             base_url = "http://localhost:11434"
             try:
-                # Check if we can get the base URL from the client
                 client = ollama.Client()
                 if hasattr(client, '_base_url'):
                     base_url = client._base_url
             except:
-                pass  # Use default localhost
+                pass
                 
             import requests
             requests.post(
@@ -283,14 +256,6 @@ class ScenarioExecutor:
         except Exception as e:
             logger.warning(f"Failed to unload model {model}: {e}")
     
-    def _validate_action_params(self, prompt_template: str, params: Dict[str, Any]) -> None:
-        """Validate that all template variables have corresponding parameters"""
-        required_vars = TemplateEngine.extract_variables(prompt_template)
-        
-        missing = [var for var in required_vars if var not in params]
-        if missing:
-            raise ActionError(f"Missing required parameters: {', '.join(missing)}")
-    
     async def execute(self):
         """Execute the scenario"""
         config = self.scenario.get('config', {})
@@ -300,111 +265,128 @@ class ScenarioExecutor:
         logging.getLogger().setLevel(log_level)
         
         # Setup output directory
-        output_dir = Path(config.get('outputDirectory', './results'))
-        output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Execute steps
-        execution_steps = self.scenario['execution']
+        # Create agent instances
+        await self._create_all_agents()
         
-        logger.info(f"Starting scenario: {self.scenario.get('scenario', {}).get('name', 'Unnamed')}")
+        # Execute workflow
+        workflow_steps = self.scenario['workflow']
+        
+        logger.info(f"Starting scenario: {self.scenario.get('metadata', {}).get('name', 'Unnamed')}")
         
         try:
-            await self._execute_steps(execution_steps)
+            await self._execute_steps(workflow_steps)
         finally:
             # Cleanup
             if self.current_model:
                 self._unload_model(self.current_model)
     
-    async def _execute_steps(self, steps: List[Dict[str, Any]], context: Optional[Dict[str, Any]] = None):
-        """Execute a list of steps"""
-        if context is None:
-            context = {}
-        
-        for i, step in enumerate(steps):
-            await self._execute_step(step, context, step_index=i)
+    async def _create_all_agents(self):
+        """Create all agent instances from definitions"""
+        for agent_name, agent_def in self.scenario['agents'].items():
+            agent = AgentInstance(
+                name=agent_name,
+                model=agent_def['model'],
+                temperature=agent_def.get('temperature', 0.7),
+                personality=agent_def.get('personality', ''),
+                context_type=agent_def.get('contextType', 'clean')
+            )
+            self.agents[agent_name] = agent
+            logger.info(f"Created agent: {agent_name} (model: {agent.model})")
     
-    async def _execute_step(self, step: Dict[str, Any], context: Dict[str, Any], step_index: int = 0):
+    def _substitute_loop_variables(self, step: Dict[str, Any], loop_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Substitute loop variables in a step definition"""
+        import copy
+        step_copy = copy.deepcopy(step)
+        
+        # Substitute in all string values
+        for key, value in step_copy.items():
+            if isinstance(value, str):
+                for var_name, var_value in loop_context.items():
+                    value = value.replace(f'{{{{{var_name}}}}}', str(var_value))
+                step_copy[key] = value
+            elif isinstance(value, list):
+                # Handle lists (like inputs)
+                new_list = []
+                for item in value:
+                    if isinstance(item, str):
+                        for var_name, var_value in loop_context.items():
+                            item = item.replace(f'{{{{{var_name}}}}}', str(var_value))
+                    new_list.append(item)
+                step_copy[key] = new_list
+            elif isinstance(value, dict):
+                # Recursively handle nested dicts
+                step_copy[key] = self._substitute_loop_variables(value, loop_context)
+        
+        return step_copy
+    
+    async def _execute_steps(self, steps: List[Dict[str, Any]], loop_context: Optional[Dict[str, Any]] = None):
+        """Execute a list of steps"""
+        for i, step in enumerate(steps):
+            await self._execute_step(step, step_index=i, loop_context=loop_context)
+    
+    async def _execute_step(self, step: Dict[str, Any], step_index: int = 0, loop_context: Optional[Dict[str, Any]] = None):
         """Execute a single step"""
         step_id = step.get('id', f'step_{step_index}')
+        
+        # Process step to substitute loop variables
+        if loop_context:
+            step = self._substitute_loop_variables(step, loop_context)
+        
         action = step['action']
         
         logger.info(f"Executing: {action} ({step_id})")
         
-        # Build context for template substitution
-        template_context = {
-            'outputs': self.outputs,
-            'agents': self.agents,
-            **context
-        }
-        
-        # Execute based on action type
-        if action == 'createAgent':
-            await self._create_agent(step, template_context)
-        elif action == 'loop':
-            await self._execute_loop(step, template_context)
-        elif action == 'saveToFile':
-            await self._save_to_file(step, template_context)
+        # Handle built-in actions
+        if action == 'loop':
+            await self._execute_loop(step, loop_context)
         elif action == 'clearContext':
-            await self._clear_context(step, template_context)
-        elif action in self.scenario['actionTemplates']:
-            await self._execute_action_template(step, template_context, step_id)
+            await self._clear_context(step)
+        elif action in self.scenario['actions']:
+            await self._execute_action(step, step_id, loop_context)
         else:
             raise ActionError(f"Unknown action: {action}")
     
-    async def _create_agent(self, step: Dict[str, Any], context: Dict[str, Any]):
-        """Create an agent instance"""
-        params = step['params']
-        template_name = params['template']
-        instance_name = params['instanceName']
-        
-        if template_name not in self.scenario['agentTemplates']:
-            raise ActionError(f"Unknown agent template: {template_name}")
-        
-        template = self.scenario['agentTemplates'][template_name]
-        
-        agent = AgentInstance(
-            name=instance_name,
-            template_name=template_name,
-            model=template['model'],
-            temperature=template.get('temperature', 0.7),
-            system_prompt=template.get('systemPrompt', ''),
-            context_mode=template.get('defaultContext', 'clean')
-        )
-        
-        self.agents[instance_name] = agent
-        logger.info(f"Created agent: {instance_name} (model: {agent.model})")
-    
-    async def _execute_action_template(self, step: Dict[str, Any], context: Dict[str, Any], step_id: str):
-        """Execute an action template"""
+    async def _execute_action(self, step: Dict[str, Any], step_id: str, loop_context: Optional[Dict[str, Any]] = None):
+        """Execute a user-defined action"""
         action_name = step['action']
-        agent_name = step.get('agent')
-        params = step.get('params', {})
-        
-        if agent_name not in self.agents:
-            raise ActionError(f"Unknown agent: {agent_name}")
+        agent_name = step['agent']
+        inputs = step.get('inputs', [])
         
         agent = self.agents[agent_name]
-        action_template = self.scenario['actionTemplates'][action_name]
-        
-        # Validate parameters against template variables
-        prompt_template = action_template['promptTemplate']
-        self._validate_action_params(prompt_template, params)
+        action_def = self.scenario['actions'][action_name]
+        prompt_template = action_def['prompt']
         
         # Ensure model is loaded
         self._ensure_model_loaded(agent.model)
         
-        # Substitute template variables in parameters
-        substituted_params = {}
-        for key, value in params.items():
-            if isinstance(value, str):
-                substituted_params[key] = TemplateEngine.substitute(value, context)
+        # Process inputs - read files or use text directly
+        processed_inputs = []
+        for input_value in inputs:
+            # Check if input is a file reference
+            if isinstance(input_value, str) and (
+                input_value.endswith('.py') or 
+                input_value.endswith('.txt') or 
+                input_value.endswith('.md') or
+                '/' in input_value or
+                '\\' in input_value
+            ):
+                try:
+                    content = self._read_file(input_value)
+                    processed_inputs.append(content)
+                except ActionError:
+                    # If file doesn't exist, treat as plain text
+                    processed_inputs.append(input_value)
             else:
-                substituted_params[key] = value
+                processed_inputs.append(str(input_value))
         
         # Build prompt from template
-        prompt = TemplateEngine.substitute(prompt_template, substituted_params)
+        prompt = prompt_template
+        for i, input_content in enumerate(processed_inputs, 1):
+            prompt = prompt.replace(f'{{{{{i}}}}}', input_content)
         
-        # Get timeout from config (with default)
+        # Get timeout from config
         config = self.scenario.get('config', {})
         timeout = config.get('queryTimeout', 300)
         max_context = config.get('maxContextTokens', 8000)
@@ -413,18 +395,33 @@ class ScenarioExecutor:
         logger.info(f"Agent {agent_name} executing: {action_name}")
         result = await agent.query(prompt, timeout=timeout, max_context_tokens=max_context)
         
-        # Store output if specified
+        # Save output if specified
         if 'output' in step:
-            self.outputs[step['output']] = result
-            logger.debug(f"Stored output '{step['output']}': {len(result)} chars")
-        
-        # Save intermediate outputs if configured
-        if self.scenario.get('config', {}).get('saveIntermediateOutputs', False):
-            output_dir = Path(self.scenario['config']['outputDirectory'])
-            output_file = output_dir / f"{step_id}_{agent_name}.md"
-            output_file.write_text(result, encoding='utf-8')
+            await self._save_output(result, step['output'], step.get('format'))
+            logger.debug(f"Saved output to '{step['output']}': {len(result)} chars")
     
-    async def _execute_loop(self, step: Dict[str, Any], context: Dict[str, Any]):
+    async def _save_output(self, content: str, filename: str, file_format: Optional[str] = None):
+        """Save content to file, with special handling for formats"""
+        # Handle format-specific processing
+        if file_format == "python":
+            # Extract code from markdown block
+            match = re.search(r"```python\n(.*?)\n```", content, re.DOTALL)
+            if match:
+                content = match.group(1).strip()
+                logger.info(f"Extracted Python code block from markdown for '{filename}'.")
+            else:
+                logger.warning(f"No Python code block found in content for '{filename}'. Saving raw content.")
+            
+            # Ensure .py extension
+            if not filename.endswith(".py"):
+                filename = f"{Path(filename).stem}.py"
+                logger.info(f"Adjusted filename to '{filename}' for Python format.")
+        
+        output_path = self.output_dir / filename
+        output_path.write_text(content, encoding='utf-8')
+        logger.info(f"Saved output to: {output_path}")
+    
+    async def _execute_loop(self, step: Dict[str, Any], parent_context: Optional[Dict[str, Any]] = None):
         """Execute a loop"""
         iterations = step['iterations']
         loop_steps = step['steps']
@@ -434,65 +431,14 @@ class ScenarioExecutor:
             
             # Create context with iteration variable
             loop_context = {
-                **context,
                 'iteration': i + 1
             }
+            if parent_context:
+                loop_context.update(parent_context)
             
-            # Process steps with iteration substitution
-            processed_steps = []
-            for loop_step in loop_steps:
-                processed_step = {}
-                for key, value in loop_step.items():
-                    if isinstance(value, str):
-                        # Substitute iteration variable
-                        value = value.replace('{{iteration}}', str(i + 1))
-                    elif isinstance(value, dict):
-                        # Recursively process nested dictionaries (like params)
-                        processed_dict = {}
-                        for k, v in value.items():
-                            if isinstance(v, str):
-                                processed_dict[k] = v.replace('{{iteration}}', str(i + 1))
-                            else:
-                                processed_dict[k] = v
-                        value = processed_dict
-                    processed_step[key] = value
-                processed_steps.append(processed_step)
-            
-            await self._execute_steps(processed_steps, loop_context)
+            await self._execute_steps(loop_steps, loop_context)
     
-    async def _save_to_file(self, step: Dict[str, Any], context: Dict[str, Any]):
-        """Save content to file, with special handling for 'python' format."""
-        params = step['params']
-        
-        # Substitute template variables
-        content = TemplateEngine.substitute(params['content'], context)
-        filename = params['filename']
-        file_format = params.get('format') # Get the 'format' parameter
-
-        # Handle 'python' format: extract code from markdown block and ensure .py extension
-        if file_format == "python":
-            # Regex to find the first ```python ... ``` block
-            match = re.search(r"```python\n(.*?)\n```", content, re.DOTALL)
-            if match:
-                content = match.group(1).strip() # Extract the code block content
-                logger.info(f"Extracted Python code block from markdown for '{filename}'.")
-            else:
-                logger.warning(f"No Python code block found in content for '{filename}' with format 'python'. Saving raw content.")
-                # Optionally, you could raise an ActionError here if a code block is strictly required:
-                # raise ActionError(f"No 'python' markdown block found in content for file '{filename}'.")
-            
-            # Ensure the filename ends with .py
-            if not filename.endswith(".py"):
-                filename = f"{Path(filename).stem}.py"
-                logger.info(f"Adjusted filename to '{filename}' for Python format.")
-
-        output_dir = Path(self.scenario.get('config', {}).get('outputDirectory', './results'))
-        output_path = output_dir / filename
-        
-        output_path.write_text(content, encoding='utf-8')
-        logger.info(f"Saved output to: {output_path}")
-    
-    async def _clear_context(self, step: Dict[str, Any], context: Dict[str, Any]):
+    async def _clear_context(self, step: Dict[str, Any]):
         """Clear conversation history for specified agent"""
         agent_name = step.get('agent')
         

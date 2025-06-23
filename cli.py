@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CLI for Scenario-based Ollama Agent Manager
+CLI for Simplified Scenario-based Ollama Agent Manager
 """
 
 import asyncio
@@ -11,7 +11,7 @@ import sys
 import copy
 from pathlib import Path
 from typing import Optional, Dict, Any
-from scenario_engine import ScenarioExecutor, ScenarioError
+from scenario_engine import ScenarioExecutor, ScenarioError, ValidationError
 
 
 def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
@@ -36,22 +36,43 @@ def validate_scenario_file(path: str) -> Optional[Dict[str, Any]]:
             scenario = json.load(f)
         
         # Check required sections
-        required = ['agentTemplates', 'actionTemplates', 'execution']
+        required = ['agents', 'actions', 'workflow']
         missing = [s for s in required if s not in scenario]
         
         if missing:
             print(f"Error: Scenario missing required sections: {', '.join(missing)}", file=sys.stderr)
             return None
         
-        # Check for at least one agent template
-        if not scenario['agentTemplates']:
-            print("Error: No agent templates defined", file=sys.stderr)
+        # Check for at least one agent
+        if not scenario['agents']:
+            print("Error: No agents defined", file=sys.stderr)
             return None
         
-        # Check for at least one execution step
-        if not scenario['execution']:
-            print("Error: No execution steps defined", file=sys.stderr)
+        # Check for at least one workflow step
+        if not scenario['workflow']:
+            print("Error: No workflow steps defined", file=sys.stderr)
             return None
+        
+        # Validate agent references and action references
+        defined_agents = set(scenario['agents'].keys())
+        defined_actions = set(scenario['actions'].keys())
+        
+        for i, step in enumerate(scenario['workflow']):
+            step_id = step.get('id', f'step_{i}')
+            
+            # Check agent exists
+            if 'agent' in step:
+                agent_name = step['agent']
+                if agent_name not in defined_agents:
+                    print(f"Error: Step '{step_id}': Unknown agent '{agent_name}'", file=sys.stderr)
+                    return None
+            
+            # Check action exists
+            action_name = step.get('action')
+            if action_name and action_name not in ['loop', 'clearContext']:
+                if action_name not in defined_actions:
+                    print(f"Error: Step '{step_id}': Unknown action '{action_name}'", file=sys.stderr)
+                    return None
         
         return scenario
         
@@ -65,21 +86,25 @@ def validate_scenario_file(path: str) -> Optional[Dict[str, Any]]:
 
 def print_scenario_info(scenario: Dict[str, Any]) -> None:
     """Print information about a scenario"""
-    info = scenario.get('scenario', {})
-    print(f"\nScenario: {info.get('name', 'Unnamed')}")
-    print(f"Version: {info.get('version', 'N/A')}")
-    if 'description' in info:
-        print(f"Description: {info['description']}")
+    metadata = scenario.get('metadata', {})
+    print(f"\nScenario: {metadata.get('name', 'Unnamed')}")
+    print(f"Version: {metadata.get('version', 'N/A')}")
+    if 'description' in metadata:
+        print(f"Description: {metadata['description']}")
     
-    print(f"\nAgent Templates: {len(scenario['agentTemplates'])}")
-    for name, template in scenario['agentTemplates'].items():
-        print(f"  - {name}: {template['model']}")
+    print(f"\nAgents: {len(scenario['agents'])}")
+    for name, agent in scenario['agents'].items():
+        print(f"  - {name}: {agent['model']} (temp: {agent.get('temperature', 0.7)}, context: {agent.get('contextType', 'clean')})")
     
-    print(f"\nAction Templates: {len(scenario['actionTemplates'])}")
-    for name in scenario['actionTemplates']:
-        print(f"  - {name}")
+    print(f"\nActions: {len(scenario['actions'])}")
+    for name, action in scenario['actions'].items():
+        # Count input placeholders
+        import re
+        placeholders = re.findall(r'\{\{(\d+)\}\}', action['prompt'])
+        input_count = len(set(placeholders))
+        print(f"  - {name} ({input_count} inputs)")
     
-    print(f"\nExecution Steps: {len(scenario['execution'])}")
+    print(f"\nWorkflow Steps: {len(scenario['workflow'])}")
     
     config = scenario.get('config', {})
     if config:
@@ -87,93 +112,81 @@ def print_scenario_info(scenario: Dict[str, Any]) -> None:
         print(f"  - Output Directory: {config.get('outputDirectory', './results')}")
         print(f"  - Log Level: {config.get('logLevel', 'INFO')}")
         print(f"  - Query Timeout: {config.get('queryTimeout', 300)}s")
-        print(f"  - Save Intermediate: {config.get('saveIntermediateOutputs', False)}")
+        print(f"  - Max Context Tokens: {config.get('maxContextTokens', 8000)}")
     print()
 
 
 def create_example_scenario(output_path: str) -> None:
     """Create an example scenario file"""
     example = {
-        "scenario": {
+        "metadata": {
             "name": "Code Review Example",
-            "version": "1.0",
+            "version": "2.0",
             "description": "A simple example showing iterative code development with review"
         },
-        "agentTemplates": {
+        "agents": {
             "developer": {
                 "model": "gemma:2b",
                 "temperature": 0.7,
-                "systemPrompt": "You are a helpful developer who writes clean Python code."
+                "personality": "You are a helpful developer who writes clean Python code.",
+                "contextType": "clean"
             },
             "reviewer": {
                 "model": "gemma:2b",
                 "temperature": 0.3,
-                "systemPrompt": "You are a code reviewer who provides constructive feedback.",
-                "defaultContext": "clean"
+                "personality": "You are a code reviewer who provides constructive feedback.",
+                "contextType": "clean"
             }
         },
-        "actionTemplates": {
+        "actions": {
             "writeCode": {
-                "promptTemplate": "Write a Python function that {{task}}"
+                "prompt": "Write a Python function that {{1}}"
             },
             "reviewCode": {
-                "promptTemplate": "Review this code and suggest improvements:\n\n{{code}}"
+                "prompt": "Review this code and suggest improvements:\n\n{{1}}"
             },
             "improveCode": {
-                "promptTemplate": "Improve this code based on the feedback:\n\nOriginal code:\n{{code}}\n\nFeedback:\n{{feedback}}"
+                "prompt": "Improve this code based on the feedback:\n\nOriginal code:\n{{1}}\n\nFeedback:\n{{2}}"
+            },
+            "createFinalReport": {
+                "prompt": "Create a summary report:\n\n# Code Development Summary\n\n## Initial Implementation\n{{1}}\n\n## Review Feedback\n{{2}}\n\n## Final Implementation\n{{3}}\n\nAdd your analysis of the improvements made."
             }
         },
-        "execution": [
-            {
-                "action": "createAgent",
-                "params": {
-                    "template": "developer",
-                    "instanceName": "dev1"
-                }
-            },
-            {
-                "action": "createAgent",
-                "params": {
-                    "template": "reviewer",
-                    "instanceName": "reviewer1"
-                }
-            },
+        "workflow": [
             {
                 "action": "writeCode",
-                "agent": "dev1",
-                "params": {
-                    "task": "calculates the factorial of a number"
-                },
-                "output": "initial_code"
+                "agent": "developer",
+                "inputs": ["calculates the factorial of a number"],
+                "output": "initial_code.md"
             },
             {
                 "action": "reviewCode",
-                "agent": "reviewer1",
-                "params": {
-                    "code": "{{outputs.initial_code}}"
-                },
-                "output": "review_feedback"
+                "agent": "reviewer",
+                "inputs": ["initial_code.md"],
+                "output": "review_feedback.md"
             },
             {
                 "action": "improveCode",
-                "agent": "dev1",
-                "params": {
-                    "code": "{{outputs.initial_code}}",
-                    "feedback": "{{outputs.review_feedback}}"
-                },
-                "output": "final_code"
+                "agent": "developer",
+                "inputs": ["initial_code.md", "review_feedback.md"],
+                "output": "improved_code.md"
             },
             {
-                "action": "saveToFile",
-                "params": {
-                    "content": "# Final Implementation\n\n{{outputs.final_code}}",
-                    "filename": "factorial.py"
-                }
+                "action": "createFinalReport",
+                "agent": "reviewer",
+                "inputs": ["initial_code.md", "review_feedback.md", "improved_code.md"],
+                "output": "development_report.md"
+            },
+            {
+                "action": "improveCode",
+                "agent": "developer",
+                "inputs": ["improved_code.md", "Focus on extracting just the code"],
+                "output": "factorial.py",
+                "format": "python"
             }
         ],
         "config": {
             "logLevel": "info",
-            "saveIntermediateOutputs": true,
             "outputDirectory": "./results",
             "queryTimeout": 300
         }
@@ -201,7 +214,7 @@ def update_output_directory(scenario: Dict[str, Any], iteration: int) -> Dict[st
 def create_parser() -> argparse.ArgumentParser:
     """Create and configure argument parser"""
     parser = argparse.ArgumentParser(
-        description='Scenario-based Ollama Agent Manager',
+        description='Simplified Scenario-based Ollama Agent Manager',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -265,9 +278,8 @@ async def execute_single_iteration(scenario_path: str, scenario: Dict[str, Any],
             
             # Show output location
             config = iteration_scenario.get('config', {})
-            if config.get('saveIntermediateOutputs'):
-                output_dir = config.get('outputDirectory', './results')
-                logger.info(f"  Outputs saved to: {output_dir}")
+            output_dir = config.get('outputDirectory', './results')
+            logger.info(f"  Outputs saved to: {output_dir}")
             
             return True
             
@@ -278,8 +290,8 @@ async def execute_single_iteration(scenario_path: str, scenario: Dict[str, Any],
             except FileNotFoundError:
                 pass
             
-    except ScenarioError as e:
-        logger.error(f"Iteration {iteration}/{total_iterations} failed - Scenario error: {e}")
+    except (ScenarioError, ValidationError) as e:
+        logger.error(f"Iteration {iteration}/{total_iterations} failed - {type(e).__name__}: {e}")
         return False
         
     except KeyboardInterrupt:
@@ -340,14 +352,20 @@ async def main():
         if args.repetitions > 1:
             print(f"Number of iterations: {args.repetitions}")
         print_scenario_info(scenario)
-        print("Execution steps:")
-        for i, step in enumerate(scenario['execution'], 1):
+        print("Workflow steps:")
+        for i, step in enumerate(scenario['workflow'], 1):
             step_id = step.get('id', f'step_{i}')
             action = step['action']
             if 'agent' in step:
                 print(f"  {i}. [{step_id}] {step['agent']} → {action}")
+                if 'inputs' in step:
+                    print(f"      Inputs: {step['inputs']}")
+                if 'output' in step:
+                    print(f"      Output: {step['output']}")
             else:
                 print(f"  {i}. [{step_id}] {action}")
+                if action == 'loop':
+                    print(f"      Iterations: {step.get('iterations', 1)}")
         
         if args.repetitions > 1:
             base_output_dir = scenario.get('config', {}).get('outputDirectory', './results')
