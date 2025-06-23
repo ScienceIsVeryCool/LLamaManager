@@ -1,8 +1,8 @@
 {
   "metadata": {
-    "name": "Competitive Cellular Automata Development",
-    "version": "2.0",
-    "description": "Two junior developers compete to create the best cellular automata simulation with iterative feedback"
+    "name": "Competitive Cellular Automata Development with Testing",
+    "version": "3.0",
+    "description": "Two junior developers compete to create the best cellular automata simulation with iterative feedback and execution testing"
   },
   
   "agents": {
@@ -23,6 +23,12 @@
       "temperature": 0.3,
       "personality": "You are a Senior Engineer evaluating competing implementations. You value both creativity and practicality. Be direct about strengths and weaknesses. Consider performance, visual appeal, code quality, and how well the solution meets requirements. Pick a winner but give balanced feedback to both developers.",
       "contextType": "rolling"
+    },
+    "tester": {
+      "model": "gemma3:4b",
+      "temperature": 0.4,
+      "personality": "You are a QA Engineer who tests code execution. You analyze runtime output, error messages, and performance characteristics. You identify bugs, crashes, performance issues, and provide practical feedback on what actually works vs what was intended. You're detail-oriented about execution problems.",
+      "contextType": "clean"
     }
   },
   
@@ -38,6 +44,12 @@
     },
     "improveBasedOnFeedback": {
       "prompt": "Your previous implementation received this feedback:\n\n{{1}}\n\nImprove your cellular automata simulation addressing the specific points raised. Maintain your coding style but incorporate the suggestions. Remember:\n- Must run indefinitely (only stop on extinction)\n- Focus on smooth visualization\n- Show interesting emergent patterns\n\nProvide the complete improved implementation."
+    },
+    "analyzeExecution": {
+      "prompt": "Analyze this program execution output:\n\n{{1}}\n\nFocus on:\n1. Did the program run successfully or crash?\n2. What errors or warnings occurred?\n3. How long did it run before stopping?\n4. Any performance issues or bottlenecks?\n5. Does the output suggest the simulation is working as intended?\n6. What runtime issues need to be addressed?\n\nProvide specific technical feedback on the execution quality."
+    },
+    "combineExecutionFeedback": {
+      "prompt": "Combine execution test results with code review:\n\n=== CODE REVIEW ===\n{{1}}\n\n=== OPTIMISTIC EXECUTION RESULTS ===\n{{2}}\n\n=== PRAGMATIC EXECUTION RESULTS ===\n{{3}}\n\nProvide comprehensive feedback that considers both code quality AND actual runtime performance. Which implementation actually works better in practice? What are the real-world differences between the approaches?"
     },
     "finalJudgment": {
       "prompt": "This is the final comparison. Evaluate the latest implementations:\n\n=== OPTIMISTIC DEVELOPER'S FINAL CODE ===\n{{1}}\n\n=== PRAGMATIC DEVELOPER'S FINAL CODE ===\n{{2}}\n\nProvide:\n1. Final winner and detailed reasoning\n2. What each developer did best throughout the iterations\n3. Key lessons learned from this competition\n4. Which approach would you recommend for production use and why"
@@ -71,6 +83,52 @@
           "output": "comparison_{{iteration}}.md"
         },
         {
+          "action": "improveBasedOnFeedback",
+          "agent": "optimistic",
+          "inputs": ["Extract just the python code from the implementation"],
+          "output": "optimistic_v{{iteration}}.py",
+          "format": "python"
+        },
+        {
+          "action": "improveBasedOnFeedback",
+          "agent": "pragmatic",
+          "inputs": ["Extract just the python code from the implementation"],
+          "output": "pragmatic_v{{iteration}}.py",
+          "format": "python"
+        },
+        {
+          "action": "run_python",
+          "inputs": ["optimistic_v{{iteration}}.py"],
+          "output": "optimistic_execution_{{iteration}}.log"
+        },
+        {
+          "action": "run_python",
+          "inputs": ["pragmatic_v{{iteration}}.py"],
+          "output": "pragmatic_execution_{{iteration}}.log"
+        },
+        {
+          "action": "analyzeExecution",
+          "agent": "tester",
+          "inputs": ["optimistic_execution_{{iteration}}.log"],
+          "output": "optimistic_execution_analysis_{{iteration}}.md"
+        },
+        {
+          "action": "analyzeExecution",
+          "agent": "tester",
+          "inputs": ["pragmatic_execution_{{iteration}}.log"],
+          "output": "pragmatic_execution_analysis_{{iteration}}.md"
+        },
+        {
+          "action": "combineExecutionFeedback",
+          "agent": "reviewer",
+          "inputs": [
+            "comparison_{{iteration}}.md",
+            "optimistic_execution_analysis_{{iteration}}.md",
+            "pragmatic_execution_analysis_{{iteration}}.md"
+          ],
+          "output": "combined_feedback_{{iteration}}.md"
+        },
+        {
           "action": "provideIterationGuidance",
           "agent": "reviewer",
           "inputs": ["{{iteration}}"],
@@ -79,18 +137,22 @@
         {
           "action": "improveBasedOnFeedback",
           "agent": "optimistic",
-          "inputs": ["guidance_{{iteration}}.md"],
+          "inputs": ["combined_feedback_{{iteration}}.md"],
           "output": "optimistic_v{{iteration}}_improved.md"
         },
         {
           "action": "improveBasedOnFeedback",
           "agent": "pragmatic",
-          "inputs": ["guidance_{{iteration}}.md"],
+          "inputs": ["combined_feedback_{{iteration}}.md"],
           "output": "pragmatic_v{{iteration}}_improved.md"
         },
         {
           "action": "clearContext",
           "agent": "reviewer"
+        },
+        {
+          "action": "clearContext",
+          "agent": "tester"
         }
       ]
     },
@@ -106,13 +168,13 @@
       "inputs": [
         "final_judgment.md",
         "comparison_1.md",
-        "guidance_1.md",
+        "combined_feedback_1.md",
         "comparison_2.md",
-        "guidance_2.md",
+        "combined_feedback_2.md",
         "comparison_3.md",
-        "guidance_3.md",
+        "combined_feedback_3.md",
         "comparison_4.md",
-        "guidance_4.md"
+        "combined_feedback_4.md"
       ],
       "output": "competition_analysis.md"
     },
@@ -120,21 +182,53 @@
       "action": "improveBasedOnFeedback",
       "agent": "optimistic",
       "inputs": ["competition_analysis.md"],
-      "output": "cellular_automata_optimistic.py",
+      "output": "cellular_automata_optimistic_final.py",
       "format": "python"
     },
     {
       "action": "improveBasedOnFeedback",
       "agent": "pragmatic",
       "inputs": ["competition_analysis.md"],
-      "output": "cellular_automata_pragmatic.py",
+      "output": "cellular_automata_pragmatic_final.py",
       "format": "python"
+    },
+    {
+      "action": "run_python",
+      "inputs": ["cellular_automata_optimistic_final.py"],
+      "output": "final_optimistic_execution.log"
+    },
+    {
+      "action": "run_python",
+      "inputs": ["cellular_automata_pragmatic_final.py"],
+      "output": "final_pragmatic_execution.log"
+    },
+    {
+      "action": "analyzeExecution",
+      "agent": "tester",
+      "inputs": ["final_optimistic_execution.log"],
+      "output": "final_optimistic_analysis.md"
+    },
+    {
+      "action": "analyzeExecution",
+      "agent": "tester",
+      "inputs": ["final_pragmatic_execution.log"],
+      "output": "final_pragmatic_analysis.md"
+    },
+    {
+      "action": "combineExecutionFeedback",
+      "agent": "reviewer",
+      "inputs": [
+        "final_judgment.md",
+        "final_optimistic_analysis.md",
+        "final_pragmatic_analysis.md"
+      ],
+      "output": "final_execution_comparison.md"
     }
   ],
   
   "config": {
     "logLevel": "info",
-    "outputDirectory": "./new_cellular_competition_results_hehe",
+    "outputDirectory": "./cellular_competition_with_testing",
     "queryTimeout": 3000,
     "maxContextTokens": 8000
   }

@@ -7,6 +7,7 @@ A clean, human-readable system for orchestrating multi-agent conversations with 
 - **Simple JSON scenarios**: Easy-to-write, easy-to-understand configuration files
 - **File-based workflow**: All inputs and outputs are files - no complex variable tracking
 - **Multi-agent orchestration**: Coordinate multiple AI agents with different personalities
+- **Python execution testing**: Run and test generated Python code automatically
 - **Memory efficient**: Only one model loaded at a time
 - **Flexible context modes**: Control how agents remember conversations
 - **Automatic validation**: Catches configuration errors before execution
@@ -15,8 +16,15 @@ A clean, human-readable system for orchestrating multi-agent conversations with 
 ## Quick Start
 
 1. Ensure Ollama is running (`ollama serve`)
-2. Create a scenario file (see examples below)
-3. Run the scenario:
+2. Create a `testenv` virtual environment in your project directory:
+   ```bash
+   python -m venv testenv
+   source testenv/bin/activate
+   pip install matplotlib numpy  # Install required packages
+   deactivate
+   ```
+3. Create a scenario file (see examples below)
+4. Run the scenario:
 
 ```bash
 python cli.py my_scenario.json
@@ -165,14 +173,41 @@ Reset an agent's conversation history:
 }
 ```
 
-## Complete Example: Code Review Pipeline
+### Run Python
+Execute Python scripts in a separate virtual environment and capture output:
+
+```json
+{
+  "action": "run_python",
+  "inputs": ["script.py", "arg1", "arg2"],
+  "output": "execution_results.log"
+}
+```
+
+**Run Python Features:**
+- Executes in a separate `testenv` virtual environment
+- 60-second timeout (terminates early on errors)
+- Captures both stdout and stderr
+- Supports command-line arguments
+- Returns execution status and output for agent analysis
+
+**Setup Requirements:**
+Create a `testenv` virtual environment in your project directory:
+```bash
+python -m venv testenv
+source testenv/bin/activate
+pip install matplotlib numpy pandas  # Install packages as needed
+deactivate
+```
+
+## Complete Example: Code Development with Testing
 
 ```json
 {
   "metadata": {
-    "name": "Code Review Pipeline",
+    "name": "Code Development with Testing",
     "version": "1.0",
-    "description": "Iterative code development with review"
+    "description": "Generate, execute, and analyze Python code"
   },
   
   "agents": {
@@ -182,10 +217,10 @@ Reset an agent's conversation history:
       "personality": "You are a Python developer who values clean, efficient code.",
       "contextType": "append"
     },
-    "reviewer": {
+    "tester": {
       "model": "gemma:2b",
       "temperature": 0.3,
-      "personality": "You are a senior engineer providing thorough code reviews.",
+      "personality": "You are a QA engineer who analyzes code execution and identifies issues.",
       "contextType": "clean"
     }
   },
@@ -194,11 +229,11 @@ Reset an agent's conversation history:
     "implement": {
       "prompt": "Implement a {{1}} that {{2}}. Include proper error handling and documentation."
     },
-    "review": {
-      "prompt": "Review this code and provide specific improvement suggestions:\n\n{{1}}"
+    "analyzeExecution": {
+      "prompt": "Analyze this execution output:\n\n{{1}}\n\nIdentify any issues, errors, or improvements needed."
     },
-    "improve": {
-      "prompt": "Improve this code based on the review feedback:\n\nOriginal Code:\n{{1}}\n\nReview Feedback:\n{{2}}"
+    "fixIssues": {
+      "prompt": "Fix the issues in this code based on the execution analysis:\n\nOriginal Code:\n{{1}}\n\nExecution Analysis:\n{{2}}"
     }
   },
   
@@ -206,27 +241,37 @@ Reset an agent's conversation history:
     {
       "action": "implement",
       "agent": "developer",
-      "inputs": ["Python class", "manages a task queue with priorities"],
-      "output": "task_queue_v1.py",
+      "inputs": ["Python script", "creates a simple visualization using matplotlib"],
+      "output": "visualization.py",
       "format": "python"
     },
     {
-      "action": "review",
-      "agent": "reviewer",
-      "inputs": ["task_queue_v1.py"],
-      "output": "review.md"
+      "action": "run_python",
+      "inputs": ["visualization.py"],
+      "output": "execution.log"
     },
     {
-      "action": "improve",
+      "action": "analyzeExecution",
+      "agent": "tester",
+      "inputs": ["execution.log"],
+      "output": "analysis.md"
+    },
+    {
+      "action": "fixIssues",
       "agent": "developer",
-      "inputs": ["task_queue_v1.py", "review.md"],
-      "output": "task_queue_final.py",
+      "inputs": ["visualization.py", "analysis.md"],
+      "output": "visualization_fixed.py",
       "format": "python"
+    },
+    {
+      "action": "run_python",
+      "inputs": ["visualization_fixed.py"],
+      "output": "final_execution.log"
     }
   ],
   
   "config": {
-    "outputDirectory": "./code_review_output",
+    "outputDirectory": "./code_test_output",
     "logLevel": "info",
     "queryTimeout": 300
   }
@@ -283,15 +328,15 @@ python cli.py scenario.json --quiet
 4. **Temperature Settings**: Lower temperatures (0.3) for analytical tasks, higher (0.7+) for creative tasks
 5. **Error Handling**: The system validates agent and action names before execution
 6. **Output Organization**: Use descriptive filenames to track workflow progress
+7. **Python Testing**: Use `run_python` to validate generated code automatically
+8. **Virtual Environment**: Keep `testenv` isolated with only necessary packages
 
-## Advanced Example: Competitive Development
-
-Here's a more complex scenario with multiple agents competing:
+## Advanced Example: Competitive Development with Testing
 
 ```json
 {
   "metadata": {
-    "name": "Competitive Development",
+    "name": "Competitive Development with Testing",
     "version": "1.0"
   },
   
@@ -313,6 +358,12 @@ Here's a more complex scenario with multiple agents competing:
       "temperature": 0.3,
       "personality": "You evaluate code solutions objectively.",
       "contextType": "clean"
+    },
+    "tester": {
+      "model": "gemma:2b",
+      "temperature": 0.4,
+      "personality": "You analyze execution results and identify runtime issues.",
+      "contextType": "clean"
     }
   },
   
@@ -322,6 +373,9 @@ Here's a more complex scenario with multiple agents competing:
     },
     "evaluate": {
       "prompt": "Compare these two solutions:\n\nSolution 1:\n{{1}}\n\nSolution 2:\n{{2}}\n\nWhich is better and why?"
+    },
+    "analyzeExecution": {
+      "prompt": "Analyze this execution output:\n\n{{1}}\n\nReport on performance, errors, and functionality."
     }
   },
   
@@ -343,6 +397,28 @@ Here's a more complex scenario with multiple agents competing:
           "inputs": ["implement a sorting algorithm (round {{iteration}})"],
           "output": "solution2_round{{iteration}}.py",
           "format": "python"
+        },
+        {
+          "action": "run_python",
+          "inputs": ["solution1_round{{iteration}}.py"],
+          "output": "execution1_round{{iteration}}.log"
+        },
+        {
+          "action": "run_python",
+          "inputs": ["solution2_round{{iteration}}.py"],
+          "output": "execution2_round{{iteration}}.log"
+        },
+        {
+          "action": "analyzeExecution",
+          "agent": "tester",
+          "inputs": ["execution1_round{{iteration}}.log"],
+          "output": "analysis1_round{{iteration}}.md"
+        },
+        {
+          "action": "analyzeExecution",
+          "agent": "tester",
+          "inputs": ["execution2_round{{iteration}}.log"],
+          "output": "analysis2_round{{iteration}}.md"
         },
         {
           "action": "evaluate",
@@ -376,3 +452,20 @@ Here's a more complex scenario with multiple agents competing:
 - Ensure the model is installed: `ollama pull model_name`
 - Check that Ollama is running: `ollama serve`
 - Verify model names match exactly (case-sensitive)
+
+### Python Execution Issues
+- Ensure `testenv` virtual environment exists in project directory
+- Install required packages in testenv: `source testenv/bin/activate && pip install package_name`
+- Check execution logs for specific error messages
+- Verify Python script syntax before execution
+
+### Virtual Environment Setup
+```bash
+# Create testenv
+python -m venv testenv
+
+# Activate and install common packages
+source testenv/bin/activate
+pip install matplotlib numpy pandas requests beautifulsoup4
+deactivate
+```

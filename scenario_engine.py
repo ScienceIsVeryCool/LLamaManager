@@ -8,6 +8,8 @@ import asyncio
 import json
 import logging
 import re
+import subprocess
+import os
 from typing import Dict, List, Any, Optional, Union
 from pathlib import Path
 from datetime import datetime
@@ -194,7 +196,7 @@ class ScenarioExecutor:
             
             # Validate action exists
             action_name = step.get('action')
-            if action_name and action_name not in ['createAgent', 'loop', 'clearContext']:
+            if action_name and action_name not in ['createAgent', 'loop', 'clearContext', 'run_python']:
                 if action_name not in defined_actions:
                     raise ValidationError(f"Step '{step_id}': Unknown action '{action_name}'. Available actions: {', '.join(sorted(defined_actions))}")
                 
@@ -255,6 +257,20 @@ class ScenarioExecutor:
             logger.debug(f"Successfully unloaded model: {model}")
         except Exception as e:
             logger.warning(f"Failed to unload model {model}: {e}")
+    
+    def _find_testenv_path(self) -> Path:
+        """Find the testenv directory relative to the current working directory"""
+        # Look for testenv in current directory first
+        testenv_path = Path.cwd() / "testenv"
+        if testenv_path.exists() and (testenv_path / "bin" / "activate").exists():
+            return testenv_path
+        
+        # Look one level up
+        testenv_path = Path.cwd().parent / "testenv"
+        if testenv_path.exists() and (testenv_path / "bin" / "activate").exists():
+            return testenv_path
+        
+        raise ActionError("testenv virtual environment not found. Expected testenv/bin/activate in current directory or parent directory.")
     
     async def execute(self):
         """Execute the scenario"""
@@ -343,10 +359,120 @@ class ScenarioExecutor:
             await self._execute_loop(step, loop_context)
         elif action == 'clearContext':
             await self._clear_context(step)
+        elif action == 'run_python':
+            await self._execute_run_python(step, step_id)
         elif action in self.scenario['actions']:
             await self._execute_action(step, step_id, loop_context)
         else:
             raise ActionError(f"Unknown action: {action}")
+    
+    async def _execute_run_python(self, step: Dict[str, Any], step_id: str):
+        """Execute a Python script in the testenv virtual environment on Ubuntu."""
+        inputs = step.get('inputs', [])
+        if not inputs:
+            raise ActionError(f"run_python action '{step_id}' requires at least one input (the Python file to execute)")
+        
+        # Find testenv path
+        try:
+            testenv_path = self._find_testenv_path()
+            python_executable = testenv_path / "bin" / "python"
+            if not python_executable.exists():
+                raise ActionError(f"Python executable not found in testenv at: {python_executable}")
+        except ActionError as e:
+            raise ActionError(f"run_python action '{step_id}': {e}")
+            
+        # Process inputs - read files or use text directly
+        # For run_python, we want the file path, not the content
+        processed_inputs = []
+        for input_value in inputs:
+            if isinstance(input_value, str) and (
+                input_value.endswith('.py') or 
+                input_value.endswith('.txt') or 
+                input_value.endswith('.md') or
+                '/' in input_value # Check for path separators to identify potential file paths
+            ):
+                # Always resolve relative paths to absolute paths relative to output_dir
+                path = Path(input_value)
+                if not path.is_absolute():
+                    absolute_path = (self.output_dir / path).resolve()
+                    # It's good practice to ensure the file exists if it's meant to be a script
+                    if not absolute_path.exists():
+                        logger.warning(f"File '{input_value}' (resolved to '{absolute_path}') does not exist. Proceeding anyway.")
+                    processed_inputs.append(str(absolute_path))
+                else:
+                    processed_inputs.append(str(path.resolve())) # Resolve absolute paths too for consistency
+            else:
+                # If it's not a file path string, treat as a direct argument and ensure it's a string
+                processed_inputs.append(str(input_value))
+        
+        # Construct the command using the absolute path to the Python executable
+        # Quote each argument to handle spaces or special characters correctly.
+        python_args = " ".join(f'"{arg}"' for arg in processed_inputs)
+        command = f'"{python_executable}" {python_args}'
+        
+        logger.info(f"Executing Python script: {command}")
+        
+        try:
+            # Execute with timeout
+            # We are keeping shell=True because it was used before, but if you only run python scripts
+            # and no other shell commands (like pipes, redirects), you might consider shell=False
+            # and passing a list of arguments for better security.
+            result = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,  # Combine stderr with stdout
+                cwd=self.output_dir  # Run from output directory
+            )
+            
+            # Wait for completion with timeout
+            try:
+                stdout, _ = await asyncio.wait_for(result.communicate(), timeout=60.0)
+                output = stdout.decode('utf-8', errors='replace')
+                return_code = result.returncode
+            except asyncio.TimeoutError:
+                # Kill the process if it times out
+                result.terminate()
+                try:
+                    await asyncio.wait_for(result.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    result.kill()
+                    await result.wait()
+                
+                output = "EXECUTION TIMED OUT AFTER 60 SECONDS\n"
+                return_code = -1
+            
+            # Prepare output content
+            output_content = f"=== Python Script Execution Results ===\n"
+            output_content += f"Command: {command}\n"
+            output_content += f"Return Code: {return_code}\n"
+            output_content += f"Working Directory: {self.output_dir}\n"
+            output_content += f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            output_content += f"\n=== Output ===\n"
+            output_content += output
+            
+            if return_code != 0:
+                output_content += f"\n=== Script exited with error code {return_code} ===\n"
+            
+            # Save output if specified
+            if 'output' in step:
+                await self._save_output(output_content, step['output'])
+                logger.info(f"Python execution output saved to '{step['output']}'")
+            
+            if return_code == 0:
+                logger.info(f"Python script executed successfully")
+            else:
+                logger.warning(f"Python script exited with code {return_code}")
+                
+        except Exception as e:
+            error_output = f"=== Python Script Execution Error ===\n"
+            error_output += f"Command: {command}\n"
+            error_output += f"Error: {str(e)}\n"
+            error_output += f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            
+            if 'output' in step:
+                await self._save_output(error_output, step['output'])
+            
+            raise ActionError(f"Failed to execute Python script in step '{step_id}': {e}")
     
     async def _execute_action(self, step: Dict[str, Any], step_id: str, loop_context: Optional[Dict[str, Any]] = None):
         """Execute a user-defined action"""
@@ -369,11 +495,12 @@ class ScenarioExecutor:
                 input_value.endswith('.py') or 
                 input_value.endswith('.txt') or 
                 input_value.endswith('.md') or
+                input_value.endswith('.log') or
                 '/' in input_value or
                 '\\' in input_value
             ):
                 try:
-                    content = self._read_file(input_value)
+                    content = self._read_file(self.output_dir / input_value)
                     processed_inputs.append(content)
                 except ActionError:
                     # If file doesn't exist, treat as plain text

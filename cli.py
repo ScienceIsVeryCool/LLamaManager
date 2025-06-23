@@ -69,7 +69,7 @@ def validate_scenario_file(path: str) -> Optional[Dict[str, Any]]:
             
             # Check action exists
             action_name = step.get('action')
-            if action_name and action_name not in ['loop', 'clearContext']:
+            if action_name and action_name not in ['loop', 'clearContext', 'run_python']:
                 if action_name not in defined_actions:
                     print(f"Error: Step '{step_id}': Unknown action '{action_name}'", file=sys.stderr)
                     return None
@@ -366,6 +366,8 @@ async def main():
                 print(f"  {i}. [{step_id}] {action}")
                 if action == 'loop':
                     print(f"      Iterations: {step.get('iterations', 1)}")
+                elif action == 'run_python':
+                    print(f"      Python execution with inputs: {step.get('inputs', [])}")
         
         if args.repetitions > 1:
             base_output_dir = scenario.get('config', {}).get('outputDirectory', './results')
