@@ -606,8 +606,8 @@ class ScenarioExecutor:
         
         # Get timeout from config
         config = self.scenario.get('config', {})
-        timeout = config.get('queryTimeout', 300)
-        max_context = config.get('maxContextTokens', 8000)
+        timeout = config.get('queryTimeout', 500)
+        max_context = config.get('maxContextTokens', 124000)
         
         # Execute query
         logger.info(f"Agent {agent_name} executing: {action_name}")

@@ -4,93 +4,100 @@
     "version": "1.0",
     "description": "One developer creates a solution, which is then tested and reviewed, with concise feedback provided for refinement."
   },
-  
   "agents": {
-    "optimistic": {
-      "model": "gemma3:4b",
-      "temperature": 0.8,
-      "personality": "You are an enthusiastic junior developer who loves experimenting with creative visual effects. You tend to favor colorful, dynamic solutions and enjoy using cutting-edge libraries. You write Python code with lots of comments explaining your excitement about each feature. You believe in 'go big or go home' and love adding extra visual flair.",
-      "contextType": "rolling"
-    },
-    "pragmatic": {
-      "model": "gemma3:4b",
+    "developer": {
+      "model": "gemma3:12b",
       "temperature": 0.6,
-      "personality": "You are a methodical junior developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
+      "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
       "contextType": "rolling"
     },
     "reviewer": {
-      "model": "gemma3:4b",
+      "model": "gemma3:12b",
       "temperature": 0.3,
-      "personality": "You are a Senior Engineer evaluating competing implementations. You value both creativity and practicality. Be direct about strengths and weaknesses. Consider performance, visual appeal, code quality, and how well the solution meets requirements. Provide balanced feedback to both developers.",
-      "contextType": "append"
+      "personality": "You are a Senior Python Engineer evaluating competing implementations. You value both creativity and practicality. Be direct about strengths and weaknesses. Consider performance, visual appeal, code quality, and how well the solution meets requirements. Provide balanced feedback to both developers.",
+      "contextType": "rolling"
     },
-    "tester": {
-      "model": "gemma3:4b",
-      "temperature": 0.4,
-      "personality": "You are a QA Engineer who tests code execution. You analyze runtime output, error messages, and performance characteristics. You identify bugs, crashes, performance issues, and provide practical feedback on what actually works vs what was intended. You're detail-oriented about execution problems.",
-      "contextType": "clean"
-    },
-    "strategist": {
-      "model": "gemma3:4b",
-      "temperature": 0.5,
-      "personality": "You are a technical strategist who thinks about the bigger picture. You analyze competition dynamics, identify key improvement opportunities, and provide high-level guidance without getting bogged down in implementation details.",
-      "contextType": "clean"
+    "bossman": {
+      "model": "gemma3:12b",
+      "temperature": 0.3,
+      "personality": "You are The Boss Man. You have the vision where others don't. You always push for just outside the realm of possible.",
+      "contextType": "rolling"
     }
   },
-  
   "actions": {
+    "draftRequirements": {
+      "prompt": "Write some thoughtful requirements a developer would need in order to complete a Python script for a cool and innovative cellular automata simulation with real-time visualization. Do not simply re-create Conway's Game Of Life."
+    },
     "initialSolution": {
-      "prompt": "Write a complete Python script for a cellular automata simulation with real-time visualization. Focus on interesting emergent behavior and smooth updates. Provide the full runnable code."
+      "prompt": "Write a complete Python script for a cool and innovative cellular automata simulation with real-time visualization based on these requirements: \n\n{{1}}\n\n. Provide the full runnable code. Use print statements for logging as your code will be tested every time"
     },
     "analyzeExecutionAndSuggest": {
-      "prompt": "Analyze this execution log:\n\n{{1}}\n\nProvide a summary of the log, including any errors or unexpected behavior. Then, summarize how to fix any identified errors and/or suggest features to add to the code for improvement. Be concise and actionable."
+      "prompt": "Analyze this execution log:\n\n{{1}}\n\nProvide a summary of the log, including any errors or unexpected behavior. Then, summarize how to fix any identified errors and/or suggest features to add to the code for improvement.\n Here is the code for reference:\n\n{{2}}\n\n and here were the original requirements: \n\n{{3}}"
     },
     "provideShortFeedback": {
-      "prompt": "Here is the analysis and suggestions for your script:\n\n{{1}}\n\nBased on this, what are the most critical points for you to address in your next iteration? Keep your response very short and to the point, focusing on the key takeaways for the developer."
+      "prompt": "Based on what you saw, what are the most critical points for you to address in your next iteration? Keep your response a bit short. Make sure takeaways are actionable for the developer."
     },
     "incorporateFeedback": {
       "prompt": "Here's your feedback for improving the cellular automata simulation:\n\n{{1}}\n\nRefine your previous cellular automata simulation based on this feedback. Provide the complete improved implementation, ensuring it's runnable."
     }
   },
-  
   "workflow": [
+        {
+      "action": "draftRequirements",
+      "agent": "bossman",
+      "inputs": [],
+      "output": "requirements.md"
+    },
     {
       "action": "initialSolution",
-      "agent": "optimistic",
-      "inputs": [],
-      "output": "initial_solution.py",
+      "agent": "developer",
+      "inputs": ["requirements.md"],
+      "output": "solution.py",
       "format": "python"
     },
     {
       "action": "run_python",
-      "inputs": ["initial_solution.py"],
-      "output": "execution_log.log"
+      "inputs": ["solution.py"],
+      "output": "execution.log"
     },
     {
-      "action": "analyzeExecutionAndSuggest",
-      "agent": "reviewer",
-      "inputs": ["execution_log.log"],
-      "output": "analysis_and_feedback.md"
-    },
-    {
-      "action": "provideShortFeedback",
-      "agent": "reviewer",
-      "inputs": ["analysis_and_feedback.md"],
-      "output": "reviewer_feedback_for_optimistic.md"
-    },
-    {
-      "action": "incorporateFeedback",
-      "agent": "optimistic",
-      "inputs": ["reviewer_feedback_for_optimistic.md"],
-      "output": "refined_solution.py",
-      "format": "python"
+      "action": "loop",
+      "iterations": 3,
+      "steps": 
+      [
+        {
+          "action": "analyzeExecutionAndSuggest",
+          "agent": "reviewer",
+          "inputs": ["execution.log", "solution.py", "requirements.md"]
+        },
+        {
+          "action": "provideShortFeedback",
+          "agent": "reviewer",
+          "output": "code_review.md"
+        },
+        {
+          "action": "incorporateFeedback",
+          "agent": "developer",
+          "inputs": ["code_review.md"],
+          "output": "solution.py",
+          "format": "python"
+        },
+        {
+          "action": "run_python",
+          "inputs": ["solution.py"],
+          "output": "execution.log"
+        },
+        {
+          "action": "clearContext",
+          "agent": "reviewer"
+        }
+      ]
     }
   ],
-  
   "config": {
     "logLevel": "info",
     "outputDirectory": "./simplified_scenario_output",
     "queryTimeout": 300,
-    "maxContextTokens": 8000
+    "maxContextTokens": 32000
   }
 }
