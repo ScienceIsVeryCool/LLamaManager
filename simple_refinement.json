@@ -7,7 +7,7 @@
   "agents": {
     "developer": {
       "model": "gemma3:12b",
-      "temperature": 0.6,
+      "temperature": 0.5,
       "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
       "contextType": "rolling"
     },
@@ -19,30 +19,30 @@
     },
     "bossman": {
       "model": "gemma3:12b",
-      "temperature": 0.3,
+      "temperature": 0.5,
       "personality": "You are The Boss Man. You have the vision where others don't. You always push for just outside the realm of possible.",
       "contextType": "rolling"
     }
   },
   "actions": {
     "draftRequirements": {
-      "prompt": "Write some thoughtful requirements a developer would need in order to complete a Python script for a cool and innovative cellular automata simulation with real-time visualization. Do not simply re-create Conway's Game Of Life."
+      "prompt": "Write some thoughtful requirements a developer would need in order to complete a Python script for a cool and innovative evolution simulation with real-time visualization. Think about what a good but short python script could accomplish and give me the spec."
     },
     "initialSolution": {
-      "prompt": "Write a complete Python script for a cool and innovative cellular automata simulation with real-time visualization based on these requirements: \n\n{{1}}\n\n. Provide the full runnable code. Use print statements for logging as your code will be tested every time"
+      "prompt": "Write a complete Python script for a cool and innovative cellular automata simulation with real-time visualization based on these requirements: \n\n{{1}}\n\n. Provide the full runnable code. Use print statements for logging as someone will be testing your code with those print statements"
     },
     "analyzeExecutionAndSuggest": {
-      "prompt": "Analyze this execution log:\n\n{{1}}\n\nProvide a summary of the log, including any errors or unexpected behavior. Then, summarize how to fix any identified errors and/or suggest features to add to the code for improvement.\n Here is the code for reference:\n\n{{2}}\n\n and here were the original requirements: \n\n{{3}}"
+      "prompt": "Analyze this execution log:\n\n{{1}}\n\nSomething about the logs is that if you get exit status -1 and a 60 second timeout, that is something hard coded meaning the app ran for 60 seconds without crashing. Do not take those indicators alone as proof of failure. If that is all the info provided, ask for more logging. Provide a summary of the log, including any errors or unexpected behavior. If logs ar enot sufficient, ask the developer to add more in the correct places. Then, summarize how to fix any identified errors and/or suggest features to add to the code for improvement.\n Here is the code for reference:\n\n{{2}}\n\n and here were the original requirements: \n\n{{3}}"
     },
     "provideShortFeedback": {
-      "prompt": "Based on what you saw, what are the most critical points for you to address in your next iteration? Keep your response a bit short. Make sure takeaways are actionable for the developer."
+      "prompt": "Based on what you saw, what are the points for the dev to address in the next iteration? Make sure takeaways are actionable for the developer. Keep in mind the developer will NOT be able to see the log output, so please inform them of any line numbers and/or code snippets they will need for context."
     },
     "incorporateFeedback": {
-      "prompt": "Here's your feedback for improving the cellular automata simulation:\n\n{{1}}\n\nRefine your previous cellular automata simulation based on this feedback. Provide the complete improved implementation, ensuring it's runnable."
+      "prompt": "Here's your feedback for improving the cellular automata simulation:\n\n{{1}}\n\nRefine your previous cellular automata simulation based on this feedback. Provide the complete improved implementation, ensuring it's runnable.\n\n{{2}}\n\nThere is the code the last time it was written for reference."
     }
   },
   "workflow": [
-        {
+    {
       "action": "draftRequirements",
       "agent": "bossman",
       "inputs": [],
@@ -62,7 +62,7 @@
     },
     {
       "action": "loop",
-      "iterations": 3,
+      "iterations": 7,
       "steps": 
       [
         {
@@ -78,7 +78,7 @@
         {
           "action": "incorporateFeedback",
           "agent": "developer",
-          "inputs": ["code_review.md"],
+          "inputs": ["code_review.md", "solution.py"],
           "output": "solution.py",
           "format": "python"
         },
@@ -90,14 +90,18 @@
         {
           "action": "clearContext",
           "agent": "reviewer"
+        },
+        {
+          "action": "clearContext",
+          "agent": "developer"
         }
       ]
     }
   ],
   "config": {
     "logLevel": "info",
-    "outputDirectory": "./simplified_scenario_output",
-    "queryTimeout": 300,
+    "outputDirectory": "./simplified_scenario_output_overnight",
+    "queryTimeout": 600,
     "maxContextTokens": 32000
   }
 }
