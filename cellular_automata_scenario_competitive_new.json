@@ -19,7 +19,7 @@
       "contextType": "rolling"
     },
     "reviewer": {
-      "model": "gemma3:12b",
+      "model": "gemma3:4b",
       "temperature": 0.3,
       "personality": "You are a Senior Engineer evaluating competing implementations. You value both creativity and practicality. Be direct about strengths and weaknesses. Consider performance, visual appeal, code quality, and how well the solution meets requirements. Pick a winner but give balanced feedback to both developers.",
       "contextType": "rolling"
@@ -74,7 +74,7 @@
     },
     {
       "action": "loop",
-      "iterations": 4,
+      "iterations": 3,
       "steps": [
         {
           "action": "compareImplementations",
@@ -228,7 +228,7 @@
   
   "config": {
     "logLevel": "info",
-    "outputDirectory": "./cellular_competition_with_testing",
+    "outputDirectory": "./Acellular_competition_with_testing_new1",
     "queryTimeout": 3000,
     "maxContextTokens": 8000
   }

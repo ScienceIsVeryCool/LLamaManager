@@ -184,6 +184,10 @@ class ScenarioExecutor:
         defined_agents = set(self.scenario['agents'].keys())
         defined_actions = set(self.scenario['actions'].keys())
         
+        # Get agent context types for validation
+        agent_contexts = {name: agent.get('contextType', 'clean') 
+                        for name, agent in self.scenario['agents'].items()}
+        
         # Check workflow steps
         for i, step in enumerate(self.scenario['workflow']):
             step_id = step.get('id', f'step_{i}')
@@ -193,6 +197,13 @@ class ScenarioExecutor:
                 agent_name = step['agent']
                 if agent_name not in defined_agents:
                     raise ValidationError(f"Step '{step_id}': Unknown agent '{agent_name}'. Available agents: {', '.join(sorted(defined_agents))}")
+                
+                # Validate that agents with 'clean' context type have output
+                if agent_contexts[agent_name] == 'clean' and 'output' not in step:
+                    raise ValidationError(
+                        f"Step '{step_id}': Agent '{agent_name}' has contextType 'clean' but no output specified. "
+                        f"Clean agents must produce output since they don't retain conversation history."
+                    )
             
             # Validate action exists
             action_name = step.get('action')
@@ -209,6 +220,35 @@ class ScenarioExecutor:
                     raise ValidationError(
                         f"Step '{step_id}': Action '{action_name}' expects {placeholder_count} inputs but got {input_count}"
                     )
+        
+        # Additional validation for loop steps
+        self._validate_loop_steps(self.scenario['workflow'])
+
+    def _validate_loop_steps(self, steps):
+        """Recursively validate loop steps"""
+        for i, step in enumerate(steps):
+            if step.get('action') == 'loop':
+                loop_steps = step.get('steps', [])
+                if not loop_steps:
+                    raise ValidationError(f"Loop step at index {i}: No steps defined in loop")
+                
+                # Recursively validate nested steps
+                self._validate_loop_steps(loop_steps)
+                
+                # Check for agent context validation in loop steps too
+                agent_contexts = {name: agent.get('contextType', 'clean') 
+                                for name, agent in self.scenario['agents'].items()}
+                
+                for j, loop_step in enumerate(loop_steps):
+                    loop_step_id = loop_step.get('id', f'loop_step_{j}')
+                    
+                    if 'agent' in loop_step:
+                        agent_name = loop_step['agent']
+                        if agent_contexts[agent_name] == 'clean' and 'output' not in loop_step:
+                            raise ValidationError(
+                                f"Loop step '{loop_step_id}': Agent '{agent_name}' has contextType 'clean' but no output specified. "
+                                f"Clean agents must produce output since they don't retain conversation history."
+                            )
     
     def _read_file(self, filepath: str) -> str:
         """Read file from output directory or absolute path"""
@@ -487,8 +527,10 @@ class ScenarioExecutor:
             output_content += f"Return Code: {return_code}\n"
             output_content += f"Working Directory: {self.output_dir}\n"
             output_content += f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            output_content += f"\n=== Output ===\n"
+            output_content += f"\n===   Output   ===\n"
             output_content += output
+            output_content += f"\n=== End Output ===\n"
+
             
             if return_code != 0:
                 output_content += f"\n=== Script exited with error code {return_code} ===\n"
