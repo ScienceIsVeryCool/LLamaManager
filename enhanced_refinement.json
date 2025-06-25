@@ -1,0 +1,210 @@
+{
+  "metadata": {
+    "name": "Simplified Iterative Development",
+    "version": "1.0",
+    "description": "One developer creates a solution, which is then tested and reviewed, with concise feedback provided for refinement."
+  },
+  "agents": {
+    "developer": {
+      "model": "gemma3:4b",
+      "temperature": 0.4,
+      "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
+      "contextType": "rolling"
+    },    
+    "hipster": {
+      "model": "gemma3:4b",
+      "temperature": 0.8,
+      "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
+      "contextType": "rolling"
+    },    
+    "developer3": {
+      "model": "gemma3:4b",
+      "temperature": 0.5,
+      "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
+      "contextType": "rolling"
+    },    
+    "minidev": {
+      "model": "gemma3:4b",
+      "temperature": 0.5,
+      "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
+      "contextType": "rolling"
+    },    
+    "minidev2": {
+      "model": "gemma3:4b",
+      "temperature": 0.5,
+      "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
+      "contextType": "rolling"
+    },    
+    "minidev3": {
+      "model": "gemma3:4b",
+      "temperature": 0.5,
+      "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
+      "contextType": "rolling"
+    },
+    "reviewer": {
+      "model": "gemma3:4b",
+      "temperature": 0.3,
+      "personality": "You are a Senior Python Engineer evaluating competing implementations. You value both creativity and practicality. Be direct about strengths and weaknesses. Consider performance, visual appeal, code quality, and how well the solution meets requirements. Provide balanced feedback to both developers.",
+      "contextType": "rolling"
+    },
+    "bossman": {
+      "model": "gemma3:4b",
+      "temperature": 0.5,
+      "personality": "You are The Boss Man. You have the vision where others don't. You always push for just outside the realm of possible. Be a bit stubborn.",
+      "contextType": "rolling"
+    },
+    "jester": {
+      "model": "gemma3:4b",
+      "temperature": 0.5,
+      "personality": "You are The unfirable core Senior Dev. You have take whatever some boss tells you and give them the blunt honest truth in a way to guide them in the right direction",
+      "contextType": "rolling"
+    }
+  },
+  "actions": {
+
+    "draftRequirements": {
+      "prompt": "Write some thoughtful requirements a developer would need in order to complete a Python script for a cool and innovative evolution simulation with real-time visualization. Think about what a good but short python script could accomplish and give me the spec."
+    },
+    "honestThoughts": {
+      "prompt": "What are your honest thoughts about the requirments the Boss Man wrote up?\n\n {{1}} you were given the same prompt he was be honest and give him your honest thoughts. I will send the message"
+    },
+    "ownUp": {
+      "prompt": "Ok Boss Man, own up, here is your honest employees bluntest feedback. \n\n {{1}} give me the complete new requirements for the application. Still dream a little big but take your employee's comments seriously."
+    },
+    "initialSolution": {
+      "prompt": "Write a complete Python script for a cool and innovative evolution simulation with real-time visualization based on these requirements: \n\n{{1}}\n\n. Provide the full runnable code. Use print statements for logging as someone will be testing your code with those print statements"
+    },
+    "analyzeExecutionAndSuggest": {
+      "prompt": "Analyze this execution log:\n\n{{1}}\n\nSomething about the logs is that if you get exit status -1 and a 60 second timeout, that is something hard coded meaning the app ran for 60 seconds without crashing. Do not take those indicators alone as proof of failure. If that is all the info provided, ask for more logging. Provide a summary of the log, including any errors or unexpected behavior. If logs are not sufficient, ask the developer to add more in the correct places. Then, summarize how to fix any identified errors and/or suggest features to add to the code for improvement.\n Here is the code for reference:\n\n{{2}}\n\n and here were the original requirements: \n\n{{3}}\n\n Ask yourself, what story do you want the log statments to tell?"
+    },
+    "provideShortFeedback": {
+      "prompt": "Based on what you saw, what are the points for the dev to address in the next iteration? Make sure takeaways are actionable for the developer. Keep in mind the developer will NOT be able to see the log output, so please inform them of any line numbers and/or code snippets they will need for context. Remind them to add more or less logging given what you saw."
+    },
+    "incorporateFeedback": {
+      "prompt": "Here's your feedback for improving the evolution simulation:\n\n{{1}}\n\nRefine your previous evolution simulation based on this feedback. Provide the complete improved implementation, ensuring it's runnable.\n\n{{2}}\n\nThere is the code the last time it was written for reference. Oh and here is what the kids say about this {{4}}"
+    },
+    "realityCheck": {
+      "prompt": "Hey, we need young hipster feedback from you. is this app actually cool? What small tweaks would you do to make it better. Keep your response kinda short. here is the code right now: {{1}}"
+    },
+
+    "outSource1of3":
+    {
+      "prompt": ""
+    },
+    "doTask": {
+      "prompt": "Here's your task {{1}}. \n\n Do your best. give a complete answer."
+    }
+  },
+  "workflow": [
+    {
+      "action": "draftRequirements",
+      "agent": "bossman",
+      "inputs": [],
+      "output": "requirements.md"
+    },
+    {
+      "action": "draftRequirements",
+      "agent": "jester",
+      "inputs": []
+    },
+
+
+
+    {
+      "action": "honestThoughts",
+      "agent": "jester",
+      "inputs": ["requirements.md"],
+      "output": "honesty.md"
+    },
+    {
+      "action": "ownUp",
+      "agent": "bossman",
+      "inputs": ["honesty.md"],
+      "output": "requirements.md"
+    },
+
+
+
+
+    {
+      "action": "initialSolution",
+      "agent": "developer",
+      "inputs": ["requirements.md"],
+      "output": "solution.py",
+      "format": "python"
+    },
+    {
+      "action": "run_python",
+      "inputs": ["solution.py"],
+      "output": "execution.log"
+    },
+
+    {
+      "action": "clear_context",
+      "agent": "developer"
+    },
+
+
+
+    {
+      "action": "loop",
+      "iterations": 50,
+      "steps": 
+      [
+        {
+          "action":"realityCheck",
+          "agent":"hipster",
+          "inputs": ["solution.py", "execution.log"],
+          "output": "vibe_check.md"
+        },
+        {
+          "action": "clear_context",
+          "agent": "hipster"
+        },
+
+        {
+          "action": "analyzeExecutionAndSuggest",
+          "agent": "reviewer",
+          "inputs": ["execution.log", "solution.py", "requirements.md", "vibe_check.md"]
+        },
+        {
+          "action": "provideShortFeedback",
+          "agent": "reviewer",
+          "output": "code_review.md"
+        },
+
+
+
+
+        {
+          "action": "incorporateFeedback",
+          "agent": "developer",
+          "inputs": ["code_review.md", "solution.py"],
+          "output": "solution.py",
+          "format": "python"
+        },
+
+
+        {
+          "action": "run_python",
+          "inputs": ["solution.py"],
+          "output": "execution.log"
+        },
+        {
+          "action": "clear_context",
+          "agent": "reviewer"
+        },
+        {
+          "action": "clear_context",
+          "agent": "developer"
+        }
+      ]
+    }
+  ],
+  "config": {
+    "logLevel": "info",
+    "outputDirectory": "./enhanced_overnight",
+    "queryTimeout": 1200,
+    "maxContextTokens": 124000
+  }
+}

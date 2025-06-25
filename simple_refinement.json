@@ -88,11 +88,11 @@
           "output": "execution.log"
         },
         {
-          "action": "clearContext",
+          "action": "clear_context",
           "agent": "reviewer"
         },
         {
-          "action": "clearContext",
+          "action": "clear_context",
           "agent": "developer"
         }
       ]
@@ -100,7 +100,7 @@
   ],
   "config": {
     "logLevel": "info",
-    "outputDirectory": "./simplified_scenario_output_overnight",
+    "outputDirectory": "./simplified_scenario_output_all_day",
     "queryTimeout": 600,
     "maxContextTokens": 32000
   }

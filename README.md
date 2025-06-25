@@ -168,7 +168,7 @@ Reset an agent's conversation history:
 
 ```json
 {
-  "action": "clearContext",
+  "action": "clear_context",
   "agent": "reviewer"
 }
 ```
