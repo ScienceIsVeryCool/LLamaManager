@@ -153,9 +153,9 @@ class ScenarioExecutor:
     def __init__(self, scenario_path: str):
         self.scenario_path = scenario_path
         self.scenario = self._load_scenario()
-        # Get output directory from metadata instead of config
-        metadata = self.scenario.get('metadata', {})
-        self.output_dir = Path(metadata.get('outputDirectory', './results'))
+        # Get working directory from config
+        config = self.scenario.get('config', {})
+        self.output_dir = Path(config.get('workDir', './results'))
         self.backup_dir = self.output_dir / '.backup'
         self.agents: Dict[str, AgentInstance] = {}
         self.current_model: Optional[str] = None
@@ -337,10 +337,10 @@ class ScenarioExecutor:
     
     async def execute(self):
         """Execute the scenario"""
-        metadata = self.scenario.get('metadata', {})
+        config = self.scenario.get('config', {})
         
-        # Setup logging from metadata instead of config
-        log_level = getattr(logging, metadata.get('logLevel', 'INFO').upper())
+        # Setup logging from config
+        log_level = getattr(logging, config.get('logLevel', 'INFO').upper())
         logging.getLogger().setLevel(log_level)
         
         # Setup output directory and backup directory
@@ -354,7 +354,7 @@ class ScenarioExecutor:
         # Execute workflow
         workflow_steps = self.scenario['workflow']
         
-        logger.info(f"Starting scenario: {self.scenario.get('metadata', {}).get('name', 'Unnamed')}")
+        logger.info(f"Starting scenario: {self.scenario.get('config', {}).get('name', 'Unnamed')}")
         
         try:
             await self._execute_steps(workflow_steps)
@@ -448,15 +448,11 @@ class ScenarioExecutor:
             raise ActionError(f"run_python action '{step_id}': {e}")
             
         # Process inputs - read files or use text directly
+        # Simple rule: if input contains a space, treat as literal text, otherwise treat as file
         # For run_python, we want the file path, not the content
         processed_inputs = []
         for input_value in inputs:
-            if isinstance(input_value, str) and (
-                input_value.endswith('.py') or 
-                input_value.endswith('.txt') or 
-                input_value.endswith('.md') or
-                '/' in input_value # Check for path separators to identify potential file paths
-            ):
+            if isinstance(input_value, str) and ' ' not in input_value:
                 # Always resolve relative paths to absolute paths relative to output_dir
                 path = Path(input_value)
                 if not path.is_absolute():
@@ -468,7 +464,7 @@ class ScenarioExecutor:
                 else:
                     processed_inputs.append(str(path.resolve())) # Resolve absolute paths too for consistency
             else:
-                # If it's not a file path string, treat as a direct argument and ensure it's a string
+                # If it contains spaces, treat as a direct argument and ensure it's a string
                 processed_inputs.append(str(input_value))
         
         # Construct the command using the absolute path to the Python executable
@@ -596,18 +592,10 @@ class ScenarioExecutor:
         self._ensure_model_loaded(agent.model)
         
         # Process inputs - read files or use text directly
+        # Simple rule: if input contains a space, treat as literal text, otherwise treat as file
         processed_inputs = []
         for input_value in inputs:
-            # Check if input is a file reference
-            if isinstance(input_value, str) and (
-                input_value.endswith('.py') or 
-                input_value.endswith('.txt') or 
-                input_value.endswith('.md') or
-                input_value.endswith('.json') or
-                input_value.endswith('.log') or
-                '/' in input_value or
-                '\\' in input_value
-            ):
+            if isinstance(input_value, str) and ' ' not in input_value:
                 try:
                     content = self._read_file(self.output_dir / input_value)
                     processed_inputs.append(content)

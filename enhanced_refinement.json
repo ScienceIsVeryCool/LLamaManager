@@ -1,10 +1,10 @@
 {
-  "metadata": {
+  "config": {
     "name": "Simplified Iterative Development",
     "version": "1.0",
     "description": "One developer creates a solution, which is then tested and reviewed, with concise feedback provided for refinement.",
     "logLevel": "info",
-    "outputDirectory": "./enhanced_evening"
+    "workDir": "./enhanced_evening"
   },
   "agents": {
     "developer": {

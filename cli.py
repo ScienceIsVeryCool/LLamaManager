@@ -86,11 +86,11 @@ def validate_scenario_file(path: str) -> Optional[Dict[str, Any]]:
 
 def print_scenario_info(scenario: Dict[str, Any]) -> None:
     """Print information about a scenario"""
-    metadata = scenario.get('metadata', {})
-    print(f"\nScenario: {metadata.get('name', 'Unnamed')}")
-    print(f"Version: {metadata.get('version', 'N/A')}")
-    if 'description' in metadata:
-        print(f"Description: {metadata['description']}")
+    config = scenario.get('config', {})
+    print(f"\nScenario: {config.get('name', 'Unnamed')}")
+    print(f"Version: {config.get('version', 'N/A')}")
+    if 'description' in config:
+        print(f"Description: {config['description']}")
     
     print(f"\nAgents: {len(scenario['agents'])}")
     for name, agent in scenario['agents'].items():
@@ -109,21 +109,21 @@ def print_scenario_info(scenario: Dict[str, Any]) -> None:
     
     print(f"\nWorkflow Steps: {len(scenario['workflow'])}")
     
-    # Configuration is now in metadata
+    # Configuration
     print(f"\nConfiguration:")
-    print(f"  - Output Directory: {metadata.get('outputDirectory', './results')}")
-    print(f"  - Log Level: {metadata.get('logLevel', 'INFO')}")
+    print(f"  - Work Directory: {config.get('workDir', './results')}")
+    print(f"  - Log Level: {config.get('logLevel', 'INFO')}")
     print()
 
 
 def create_example_scenario(output_path: str) -> None:
     """Create an example scenario file"""
     example = {
-        "metadata": {
+        "config": {
             "name": "Code Review Example",
             "version": "2.0",
             "description": "A simple example showing iterative code development with review",
-            "outputDirectory": "./results",
+            "workDir": "./results",
             "logLevel": "info"
         },
         "agents": {
@@ -198,15 +198,15 @@ def create_example_scenario(output_path: str) -> None:
 
 
 def update_output_directory(scenario: Dict[str, Any], iteration: int) -> Dict[str, Any]:
-    """Update the output directory for the current iteration"""
+    """Update the work directory for the current iteration"""
     scenario_copy = copy.deepcopy(scenario)
     
-    # Output directory is now in metadata
-    if 'metadata' in scenario_copy and 'outputDirectory' in scenario_copy['metadata']:
-        original_dir = scenario_copy['metadata']['outputDirectory']
+    # Work directory is now in config
+    if 'config' in scenario_copy and 'workDir' in scenario_copy['config']:
+        original_dir = scenario_copy['config']['workDir']
         # Remove trailing slash if present
         original_dir = original_dir.rstrip('/')
-        scenario_copy['metadata']['outputDirectory'] = f"{original_dir}_{iteration}"
+        scenario_copy['config']['workDir'] = f"{original_dir}_{iteration}"
     
     return scenario_copy
 
@@ -277,9 +277,9 @@ async def execute_single_iteration(scenario_path: str, scenario: Dict[str, Any],
             logger.info(f"✓ Iteration {iteration}/{total_iterations} completed successfully")
             
             # Show output location
-            metadata = iteration_scenario.get('metadata', {})
-            output_dir = metadata.get('outputDirectory', './results')
-            logger.info(f"  Outputs saved to: {output_dir}")
+            config = iteration_scenario.get('config', {})
+            work_dir = config.get('workDir', './results')
+            logger.info(f"  Outputs saved to: {work_dir}")
             
             return True
             
@@ -336,7 +336,7 @@ async def main():
     if args.info:
         print_scenario_info(scenario)
         if args.repetitions > 1:
-            print(f"Note: Would run {args.repetitions} iterations with separate output directories")
+            print(f"Note: Would run {args.repetitions} iterations with separate work directories")
         return
     
     # Handle validation only
@@ -370,10 +370,10 @@ async def main():
                     print(f"      Python execution with inputs: {step.get('inputs', [])}")
         
         if args.repetitions > 1:
-            base_output_dir = scenario.get('metadata', {}).get('outputDirectory', './results')
-            print(f"\nOutput directories that will be created:")
+            base_work_dir = scenario.get('config', {}).get('workDir', './results')
+            print(f"\nWork directories that will be created:")
             for i in range(1, args.repetitions + 1):
-                print(f"  {base_output_dir}_{i}")
+                print(f"  {base_work_dir}_{i}")
         return
     
     # Execute scenario iterations

@@ -36,11 +36,11 @@ A scenario file has four main sections:
 
 ```json
 {
-  "metadata": {
+  "config": {
     "name": "My Scenario",
     "version": "1.0",
     "description": "What this scenario does",
-    "outputDirectory": "./results",
+    "workDir": "./results",
     "logLevel": "info"
   },
   
@@ -141,10 +141,17 @@ The workflow defines the sequence of actions to execute:
 ```
 
 ### File I/O
-The system automatically handles file reading and writing:
-- **Reading**: If an input looks like a filename (has extension or path separators), it's read automatically
+The system automatically handles file reading and writing with a simple rule:
+- **Reading**: If an input string contains **no spaces**, it's treated as a filename and read automatically. If it contains spaces, it's used as literal text.
 - **Writing**: The `output` field specifies where to save the result
 - **Format**: Use `"format": "python"` to extract code blocks from markdown responses
+- **Work Directory**: All files are read from and written to the work directory specified in config
+
+**Input Examples:**
+```json
+"inputs": ["data.txt", "analyze the performance trends"]
+```
+In this example, `data.txt` (no spaces) is read as a file, while `analyze the performance trends` (contains spaces) is used as literal text.
 
 ## Built-in Actions
 
@@ -207,11 +214,11 @@ deactivate
 
 ```json
 {
-  "metadata": {
+  "config": {
     "name": "Code Development with Testing",
     "version": "1.0",
     "description": "Generate, execute, and analyze Python code",
-    "outputDirectory": "./code_test_output",
+    "workDir": "./code_test_output",
     "logLevel": "info"
   },
   
@@ -309,41 +316,42 @@ python cli.py scenario.json --quiet
 
 ## Configuration Options
 
-### Agent Configuration
+### Configuration Options
 - `model`: The Ollama model to use (e.g., "gemma:2b", "llama2", "mistral")
 - `temperature`: Creativity level (0.0 to 1.0)
 - `personality`: System prompt defining the agent's role
 - `maxContextTokens`: Maximum tokens before trimming conversation history (default: 8000)
 - `queryTimeout`: Maximum seconds to wait for model responses (default: 300)
 
-### Metadata Configuration
+### Config Section
 - `name`: Scenario name for identification
 - `version`: Scenario version
 - `description`: Brief description of what the scenario does
-- `outputDirectory`: Where to save output files (default: "./results")
+- `workDir`: Directory where all files are saved and commands are executed (default: "./results")
 - `logLevel`: Logging verbosity ("debug", "info", "warning", "error")
 
 ## Tips & Best Practices
 
-1. **File Extensions**: Always include extensions (.py, .md, .txt) for better file handling
-2. **Action Design**: Keep actions focused on a single task for better reusability
-3. **Context Management**: Use `clear_context` between major workflow phases to avoid confusion
-4. **Temperature Settings**: Lower temperatures (0.3) for analytical tasks, higher (0.7+) for creative tasks
-5. **Context Limits**: Adjust `maxContextTokens` based on your model's capabilities and task complexity
-6. **Timeout Settings**: Set longer `queryTimeout` for complex reasoning tasks
-7. **Error Handling**: The system validates agent and action names before execution
-8. **Output Organization**: Use descriptive filenames to track workflow progress
-9. **Python Testing**: Use `run_python` to validate generated code automatically
-10. **Virtual Environment**: Keep `testenv` isolated with only necessary packages
+1. **Input Rules**: Use inputs without spaces for filenames, inputs with spaces for literal text
+2. **File Extensions**: Include extensions (.py, .md, .txt) for clarity in file outputs
+3. **Action Design**: Keep actions focused on a single task for better reusability
+4. **Context Management**: Use `clear_context` between major workflow phases to avoid confusion
+5. **Temperature Settings**: Lower temperatures (0.3) for analytical tasks, higher (0.7+) for creative tasks
+6. **Context Limits**: Adjust `maxContextTokens` based on your model's capabilities and task complexity
+7. **Timeout Settings**: Set longer `queryTimeout` for complex reasoning tasks
+8. **Error Handling**: The system validates agent and action names before execution
+9. **Work Directory**: Use descriptive work directory names to organize different scenario runs
+10. **Python Testing**: Use `run_python` to validate generated code automatically
+11. **Virtual Environment**: Keep `testenv` isolated with only necessary packages
 
 ## Advanced Example: Competitive Development with Testing
 
 ```json
 {
-  "metadata": {
+  "config": {
     "name": "Competitive Development with Testing",
     "version": "1.0",
-    "outputDirectory": "./competitive_dev",
+    "workDir": "./competitive_dev",
     "logLevel": "info"
   },
   
@@ -451,8 +459,13 @@ python cli.py scenario.json --quiet
 
 ### File Not Found Errors
 - Ensure the file was created in a previous step
-- Check that you're using the correct filename with extension
-- Verify the output directory path
+- Check that you're using the correct filename (no spaces for file inputs)
+- Verify the work directory path
+
+### Input Processing Issues
+- Remember: inputs with spaces = literal text, inputs without spaces = file names
+- If you need a literal filename with spaces, use a symlink or rename the file
+- Check work directory for file existence
 
 ### Input Count Mismatch
 - Count the {{1}}, {{2}}, etc. placeholders in your action prompt
