@@ -345,7 +345,7 @@ class ScenarioExecutor:
             args = shlex.split(command)
             if len(args) > 1:
                 script_name = Path(args[1]).name
-                pkill_cmd = f"pkill -f '{script_name}'"
+                pkill_cmd = f"pkill -f python"
                 logger.debug(f"Using pkill command: {pkill_cmd}")
                 
                 process = await asyncio.create_subprocess_shell(
@@ -513,12 +513,12 @@ class ScenarioExecutor:
             
             # Wait for completion with timeout
             try:
-                stdout, _ = await asyncio.wait_for(result.communicate(), timeout=60.0)
+                stdout, _ = await asyncio.wait_for(result.communicate(), timeout=30.0)
                 output = stdout.decode('utf-8', errors='replace')
                 return_code = result.returncode
             except asyncio.TimeoutError:
                 # Two-step process killing with escalating force
-                logger.warning(f"Python script timed out after 60 seconds, attempting to kill process {result.pid}")
+                logger.warning(f"Python script timed out after 30 seconds, attempting to kill process {result.pid}")
                 
                 # Step 1: Send SIGINT (Ctrl+C equivalent) - gentle shutdown
                 try:
@@ -566,7 +566,7 @@ class ScenarioExecutor:
                     except:
                         pass
                 
-                output = "EXECUTION TIMED OUT AFTER 60 SECONDS\n"
+                output = "EXECUTION TIMED OUT AFTER 30 SECONDS\n"
                 return_code = -1
             # Prepare output content
             output_content = f"=== Python Script Execution Results ===\n"
@@ -682,7 +682,11 @@ class ScenarioExecutor:
             if not filename.endswith(".py"):
                 filename = f"{Path(filename).stem}.py"
                 logger.info(f"Adjusted filename to '{filename}' for Python format.")
+                
+        # Create backup before saving new content
+        self._create_backup(filename, content)
         
+        # Save the main file
         output_path = self.output_dir / filename
         output_path.write_text(content, encoding='utf-8')
         logger.info(f"Saved output to: {output_path}")
