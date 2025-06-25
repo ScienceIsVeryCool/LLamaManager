@@ -48,13 +48,13 @@
       "contextType": "rolling"
     },
     "bossman": {
-      "model": "gemma3:4b",
+      "model": "gemma3:12b",
       "temperature": 0.5,
       "personality": "You are The Boss Man. You have the vision where others don't. You always push for just outside the realm of possible. Be a bit stubborn.",
       "contextType": "rolling"
     },
     "jester": {
-      "model": "gemma3:4b",
+      "model": "gemma3:12b",
       "temperature": 0.5,
       "personality": "You are The unfirable core Senior Dev. You have take whatever some boss tells you and give them the blunt honest truth in a way to guide them in the right direction",
       "contextType": "rolling"
@@ -63,25 +63,25 @@
   "actions": {
 
     "draftRequirements": {
-      "prompt": "Write some thoughtful requirements a developer would need in order to complete a Python script for a cool and innovative evolution simulation with real-time visualization. Think about what a good but short python script could accomplish and give me the spec."
+      "prompt": "Write some thoughtful requirements a developer would need in order to complete a Python script for a cool and innovative evolution simulation with real-time visualization. Think about what a good but short python script could accomplish and give me the spec. Do not be theatrical. My only requirements to you is to make sure this app stays lightweight and exits cleanly. The other requirement is that we are using Python 3.13.3, so if that is too new for your knowledge I just need you to keep that in mind and to make sure to not use any near deprecated functionality. You can assume the dev has everything installed. Know that this will only ever be ran as 'python solution.py' in a setup test environment with no command line args/input. This means no config files. All information received needs to be via print statements. You are forced to use intuition alone to create a compelling UI but you will only have access to log information from terminal output only from the app. The complete solution needs to be one file so keep the scope in mind but leave room for cool developements. The only deliverable you can ask for from the dev however is just the solution.py file. You do not care really about commenting as long as everyone thinks it is ok. Do not get too technical in the requirements, you just gotta get the coder to know what they have to code, thats it. Now still make sure to ask for something that you think is a fun twist on old ideas. Something fun. So really, the whole goal is to create a fun twist on an evolution simulator with cool visuals that needs no input and is just something to watch and observe as is through an aquarium window."
     },
     "honestThoughts": {
       "prompt": "What are your honest thoughts about the requirments the Boss Man wrote up?\n\n {{1}} you were given the same prompt he was be honest and give him your honest thoughts. I will send the message"
     },
     "ownUp": {
-      "prompt": "Ok Boss Man, own up, here is your honest employees bluntest feedback. \n\n {{1}} give me the complete new requirements for the application. Still dream a little big but take your employee's comments seriously."
+      "prompt": "Ok Boss Man, own up, here is your honest employees bluntest feedback. \n\n {{1}} give me the complete new requirements for the application. Still dream a little big but take your employee's comments seriously. Give the full new requirements that would most help a junior dev develop this."
     },
     "initialSolution": {
-      "prompt": "Write a complete Python script for a cool and innovative evolution simulation with real-time visualization based on these requirements: \n\n{{1}}\n\n. Provide the full runnable code. Use print statements for logging as someone will be testing your code with those print statements"
+      "prompt": "You are going to give the full running python solution to the following requirements: \n\n{{1}}\n\n. Provide the full runnable code. Use print statements for logging as someone will be testing your code with those print statements"
     },
     "analyzeExecutionAndSuggest": {
-      "prompt": "Analyze this execution log:\n\n{{1}}\n\nSomething about the logs is that if you get exit status -1 and a 60 second timeout, that is something hard coded meaning the app ran for 60 seconds without crashing. Do not take those indicators alone as proof of failure. If that is all the info provided, ask for more logging. Provide a summary of the log, including any errors or unexpected behavior. If logs are not sufficient, ask the developer to add more in the correct places. Then, summarize how to fix any identified errors and/or suggest features to add to the code for improvement.\n Here is the code for reference:\n\n{{2}}\n\n and here were the original requirements: \n\n{{3}}\n\n Ask yourself, what story do you want the log statments to tell?"
+      "prompt": "Analyze this execution log:\n\n{{1}}\n\nSomething about the logs is that if you get exit status -1 and a 60 second timeout, that is something hard coded meaning the app ran for 60 seconds without crashing. Do not take those indicators alone as proof of failure. If that is all the info provided, ask for more logging. Provide a summary of the log, including any errors or unexpected behavior. If logs are not sufficient, ask the developer to add more in the correct places. Then, summarize how to fix any identified errors and/or suggest features to add to the code for improvement.\n Here is the code for reference:\n\n{{2}}\n\n and here were the original requirements: \n\n{{3}}\n\n Ask yourself, what story do you want the log statments to tell? Oh and here is what the kids say about this {{4}}\n\n Figure out where we are on the roadmap to success to point the dev into a specific direction they could do right now. The boss man does still want the requirements met. Try to get logging relatively shorter so that the logs are actually readable, for example make sure to round floats or be wary of what you are printing to the screen. someone has to read this and make feadback in one go."
     },
     "provideShortFeedback": {
       "prompt": "Based on what you saw, what are the points for the dev to address in the next iteration? Make sure takeaways are actionable for the developer. Keep in mind the developer will NOT be able to see the log output, so please inform them of any line numbers and/or code snippets they will need for context. Remind them to add more or less logging given what you saw."
     },
     "incorporateFeedback": {
-      "prompt": "Here's your feedback for improving the evolution simulation:\n\n{{1}}\n\nRefine your previous evolution simulation based on this feedback. Provide the complete improved implementation, ensuring it's runnable.\n\n{{2}}\n\nThere is the code the last time it was written for reference. Oh and here is what the kids say about this {{4}}"
+      "prompt": "Here's your feedback for improving the evolution simulation:\n\n{{1}}\n\nRefine your previous evolution simulation based on this feedback. Provide the complete improved implementation, ensuring it's runnable.\n\n{{2}}\n\nThere is the code the last time it was written for reference. Give the full correct running solution ready to demo."
     },
     "realityCheck": {
       "prompt": "Hey, we need young hipster feedback from you. is this app actually cool? What small tweaks would you do to make it better. Keep your response kinda short. here is the code right now: {{1}}"
@@ -124,6 +124,14 @@
     },
 
 
+    {
+      "action": "clear_context",
+      "agent": "bossman"
+    },    
+    {
+      "action": "clear_context",
+      "agent": "jester"
+    },
 
 
     {
@@ -148,7 +156,7 @@
 
     {
       "action": "loop",
-      "iterations": 50,
+      "iterations": 20,
       "steps": 
       [
         {
@@ -203,7 +211,7 @@
   ],
   "config": {
     "logLevel": "info",
-    "outputDirectory": "./enhanced_overnight",
+    "outputDirectory": "./enhanced_morning_2",
     "queryTimeout": 1200,
     "maxContextTokens": 124000
   }
