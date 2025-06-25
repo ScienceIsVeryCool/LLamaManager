@@ -46,7 +46,7 @@ class AgentInstance:
     model: str
     temperature: float
     personality: str
-    context_type: str = "clean"  # clean, append, rolling
+    context_type: str = "rolling"  # clean, append, rolling
     conversation_history: List[Dict[str, str]] = field(default_factory=list)
     _client: Optional[ollama.Client] = None
     
@@ -155,6 +155,7 @@ class ScenarioExecutor:
         self.scenario_path = scenario_path
         self.scenario = self._load_scenario()
         self.output_dir = Path(self.scenario.get('config', {}).get('outputDirectory', './results'))
+        self.backup_dir = self.output_dir / '.backup'
         self.agents: Dict[str, AgentInstance] = {}
         self.current_model: Optional[str] = None
         self._validate_scenario()
@@ -207,7 +208,7 @@ class ScenarioExecutor:
             
             # Validate action exists
             action_name = step.get('action')
-            if action_name and action_name not in ['createAgent', 'loop', 'clearContext', 'run_python']:
+            if action_name and action_name not in ['createAgent', 'loop', 'clear_context', 'run_python']:
                 if action_name not in defined_actions:
                     raise ValidationError(f"Step '{step_id}': Unknown action '{action_name}'. Available actions: {', '.join(sorted(defined_actions))}")
                 
@@ -267,6 +268,30 @@ class ScenarioExecutor:
         except Exception as e:
             raise ActionError(f"Error reading file {filepath}: {e}")
     
+    def _create_backup(self, filename: str, content: str):
+        """Create a timestamped backup of the file content"""
+        try:
+            # Ensure backup directory exists
+            self.backup_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate timestamp in format: YYYYMMDD_HHMMSS
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Extract filename without path for backup naming
+            base_filename = Path(filename).name
+            
+            # Create backup filename: DATETIME_originalfilename
+            backup_filename = f"{timestamp}_{base_filename}"
+            backup_path = self.backup_dir / backup_filename
+            
+            # Write backup
+            backup_path.write_text(content, encoding='utf-8')
+            logger.info(f"Created backup: {backup_path.relative_to(self.output_dir)}")
+            
+        except Exception as e:
+            # Don't fail the main operation if backup fails, just warn
+            logger.warning(f"Failed to create backup for '{filename}': {e}")
+    
     def _ensure_model_loaded(self, model: str):
         """Ensure only one model is loaded at a time"""
         if self.current_model and self.current_model != model:
@@ -312,6 +337,26 @@ class ScenarioExecutor:
         
         raise ActionError("testenv virtual environment not found. Expected testenv/bin/activate in current directory or parent directory.")
     
+    async def _force_kill_python_process(self, command: str, pid: int):
+        """Force kill Python process using pkill as last resort"""
+        try:
+            # Extract the script name from the command for targeted killing
+            import shlex
+            args = shlex.split(command)
+            if len(args) > 1:
+                script_name = Path(args[1]).name
+                pkill_cmd = f"pkill -f '{script_name}'"
+                logger.debug(f"Using pkill command: {pkill_cmd}")
+                
+                process = await asyncio.create_subprocess_shell(
+                    pkill_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await process.communicate()
+        except Exception as e:
+            logger.error(f"pkill fallback failed: {e}")
+    
     async def execute(self):
         """Execute the scenario"""
         config = self.scenario.get('config', {})
@@ -320,8 +365,10 @@ class ScenarioExecutor:
         log_level = getattr(logging, config.get('logLevel', 'INFO').upper())
         logging.getLogger().setLevel(log_level)
         
-        # Setup output directory
+        # Setup output directory and backup directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Backup directory: {self.backup_dir}")
         
         # Create agent instances
         await self._create_all_agents()
@@ -394,10 +441,10 @@ class ScenarioExecutor:
         
         logger.info(f"Executing: {action} ({step_id})")
         
-        # Handle built-in actions
+# Handle built-in actions
         if action == 'loop':
             await self._execute_loop(step, loop_context)
-        elif action == 'clearContext':
+        elif action == 'clear_context':
             await self._clear_context(step)
         elif action == 'run_python':
             await self._execute_run_python(step, step_id)
@@ -620,7 +667,7 @@ class ScenarioExecutor:
             logger.debug(f"Saved output to '{step['output']}': {len(result)} chars")
     
     async def _save_output(self, content: str, filename: str, file_format: Optional[str] = None):
-        """Save content to file, with special handling for formats"""
+        """Save content to file, with special handling for formats and automatic backup creation"""
         # Handle format-specific processing
         if file_format == "python":
             # Extract code from markdown block
