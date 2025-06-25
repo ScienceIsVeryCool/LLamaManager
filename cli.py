@@ -69,7 +69,7 @@ def validate_scenario_file(path: str) -> Optional[Dict[str, Any]]:
             
             # Check action exists
             action_name = step.get('action')
-            if action_name and action_name not in ['loop', 'clearContext', 'run_python']:
+            if action_name and action_name not in ['loop', 'clear_context', 'run_python', 'user_input', 'apply_patch']:
                 if action_name not in defined_actions:
                     print(f"Error: Step '{step_id}': Unknown action '{action_name}'", file=sys.stderr)
                     return None
@@ -94,7 +94,10 @@ def print_scenario_info(scenario: Dict[str, Any]) -> None:
     
     print(f"\nAgents: {len(scenario['agents'])}")
     for name, agent in scenario['agents'].items():
-        print(f"  - {name}: {agent['model']} (temp: {agent.get('temperature', 0.7)}, context: {agent.get('contextType', 'clean')})")
+        temp = agent.get('temperature', 0.7)
+        max_tokens = agent.get('maxContextTokens', 8000)
+        timeout = agent.get('queryTimeout', 300)
+        print(f"  - {name}: {agent['model']} (temp: {temp}, context: {max_tokens} tokens, timeout: {timeout}s)")
     
     print(f"\nActions: {len(scenario['actions'])}")
     for name, action in scenario['actions'].items():
@@ -106,13 +109,10 @@ def print_scenario_info(scenario: Dict[str, Any]) -> None:
     
     print(f"\nWorkflow Steps: {len(scenario['workflow'])}")
     
-    config = scenario.get('config', {})
-    if config:
-        print(f"\nConfiguration:")
-        print(f"  - Output Directory: {config.get('outputDirectory', './results')}")
-        print(f"  - Log Level: {config.get('logLevel', 'INFO')}")
-        print(f"  - Query Timeout: {config.get('queryTimeout', 300)}s")
-        print(f"  - Max Context Tokens: {config.get('maxContextTokens', 8000)}")
+    # Configuration is now in metadata
+    print(f"\nConfiguration:")
+    print(f"  - Output Directory: {metadata.get('outputDirectory', './results')}")
+    print(f"  - Log Level: {metadata.get('logLevel', 'INFO')}")
     print()
 
 
@@ -122,20 +122,24 @@ def create_example_scenario(output_path: str) -> None:
         "metadata": {
             "name": "Code Review Example",
             "version": "2.0",
-            "description": "A simple example showing iterative code development with review"
+            "description": "A simple example showing iterative code development with review",
+            "outputDirectory": "./results",
+            "logLevel": "info"
         },
         "agents": {
             "developer": {
                 "model": "gemma:2b",
                 "temperature": 0.7,
                 "personality": "You are a helpful developer who writes clean Python code.",
-                "contextType": "clean"
+                "maxContextTokens": 8000,
+                "queryTimeout": 300
             },
             "reviewer": {
                 "model": "gemma:2b",
                 "temperature": 0.3,
                 "personality": "You are a code reviewer who provides constructive feedback.",
-                "contextType": "clean"
+                "maxContextTokens": 12000,
+                "queryTimeout": 400
             }
         },
         "actions": {
@@ -184,12 +188,7 @@ def create_example_scenario(output_path: str) -> None:
                 "output": "factorial.py",
                 "format": "python"
             }
-        ],
-        "config": {
-            "logLevel": "info",
-            "outputDirectory": "./results",
-            "queryTimeout": 300
-        }
+        ]
     }
     
     with open(output_path, 'w') as f:
@@ -202,11 +201,12 @@ def update_output_directory(scenario: Dict[str, Any], iteration: int) -> Dict[st
     """Update the output directory for the current iteration"""
     scenario_copy = copy.deepcopy(scenario)
     
-    if 'config' in scenario_copy and 'outputDirectory' in scenario_copy['config']:
-        original_dir = scenario_copy['config']['outputDirectory']
+    # Output directory is now in metadata
+    if 'metadata' in scenario_copy and 'outputDirectory' in scenario_copy['metadata']:
+        original_dir = scenario_copy['metadata']['outputDirectory']
         # Remove trailing slash if present
         original_dir = original_dir.rstrip('/')
-        scenario_copy['config']['outputDirectory'] = f"{original_dir}_{iteration}"
+        scenario_copy['metadata']['outputDirectory'] = f"{original_dir}_{iteration}"
     
     return scenario_copy
 
@@ -277,8 +277,8 @@ async def execute_single_iteration(scenario_path: str, scenario: Dict[str, Any],
             logger.info(f"✓ Iteration {iteration}/{total_iterations} completed successfully")
             
             # Show output location
-            config = iteration_scenario.get('config', {})
-            output_dir = config.get('outputDirectory', './results')
+            metadata = iteration_scenario.get('metadata', {})
+            output_dir = metadata.get('outputDirectory', './results')
             logger.info(f"  Outputs saved to: {output_dir}")
             
             return True
@@ -370,7 +370,7 @@ async def main():
                     print(f"      Python execution with inputs: {step.get('inputs', [])}")
         
         if args.repetitions > 1:
-            base_output_dir = scenario.get('config', {}).get('outputDirectory', './results')
+            base_output_dir = scenario.get('metadata', {}).get('outputDirectory', './results')
             print(f"\nOutput directories that will be created:")
             for i in range(1, args.repetitions + 1):
                 print(f"  {base_output_dir}_{i}")

@@ -2,62 +2,74 @@
   "metadata": {
     "name": "Simplified Iterative Development",
     "version": "1.0",
-    "description": "One developer creates a solution, which is then tested and reviewed, with concise feedback provided for refinement."
+    "description": "One developer creates a solution, which is then tested and reviewed, with concise feedback provided for refinement.",
+    "logLevel": "info",
+    "outputDirectory": "./enhanced_evening"
   },
   "agents": {
     "developer": {
       "model": "gemma3:4b",
       "temperature": 0.4,
       "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
-      "contextType": "rolling"
+      "queryTimeout": 120,
+      "maxContextTokens": 124000 
     },    
     "hipster": {
       "model": "gemma3:4b",
       "temperature": 0.8,
       "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
-      "contextType": "rolling"
+      "queryTimeout": 120,
+      "maxContextTokens": 124000     
     },    
     "developer3": {
       "model": "gemma3:4b",
       "temperature": 0.5,
       "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
-      "contextType": "rolling"
-    },    
+      "queryTimeout": 120,
+      "maxContextTokens": 124000      
+    },
     "minidev": {
       "model": "gemma3:4b",
       "temperature": 0.5,
       "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
-      "contextType": "rolling"
+      "queryTimeout": 120,
+      "maxContextTokens": 124000 
     },    
     "minidev2": {
       "model": "gemma3:4b",
       "temperature": 0.5,
       "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
-      "contextType": "rolling"
+      "queryTimeout": 120,
+      "maxContextTokens": 124000 
+      
     },    
     "minidev3": {
       "model": "gemma3:4b",
       "temperature": 0.5,
       "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
-      "contextType": "rolling"
+      "queryTimeout": 120,
+      "maxContextTokens": 124000 
     },
     "reviewer": {
       "model": "gemma3:4b",
       "temperature": 0.3,
       "personality": "You are a Senior Python Engineer evaluating competing implementations. You value both creativity and practicality. Be direct about strengths and weaknesses. Consider performance, visual appeal, code quality, and how well the solution meets requirements. Provide balanced feedback to both developers.",
-      "contextType": "rolling"
+      "queryTimeout": 120,
+      "maxContextTokens": 124000 
     },
     "bossman": {
-      "model": "gemma3:12b",
+      "model": "gemma3:4b",
       "temperature": 0.5,
       "personality": "You are The Boss Man. You have the vision where others don't. You always push for just outside the realm of possible. Be a bit stubborn.",
-      "contextType": "rolling"
+      "queryTimeout": 120,
+      "maxContextTokens": 124000 
     },
     "jester": {
-      "model": "gemma3:12b",
+      "model": "gemma3:4b",
       "temperature": 0.5,
       "personality": "You are The unfirable core Senior Dev. You have take whatever some boss tells you and give them the blunt honest truth in a way to guide them in the right direction",
-      "contextType": "rolling"
+      "queryTimeout": 120,
+      "maxContextTokens": 124000 
     }
   },
   "actions": {
@@ -208,11 +220,5 @@
         }
       ]
     }
-  ],
-  "config": {
-    "logLevel": "info",
-    "outputDirectory": "./enhanced_morning_2",
-    "queryTimeout": 1200,
-    "maxContextTokens": 124000
-  }
+  ]
 }

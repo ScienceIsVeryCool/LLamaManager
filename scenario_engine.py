@@ -46,7 +46,8 @@ class AgentInstance:
     model: str
     temperature: float
     personality: str
-    context_type: str = "rolling"  # clean, append, rolling
+    max_context_tokens: int = 16000
+    query_timeout: int = 300
     conversation_history: List[Dict[str, str]] = field(default_factory=list)
     _client: Optional[ollama.Client] = None
     
@@ -60,7 +61,7 @@ class AgentInstance:
         """Rough estimation of token count (approximately 4 chars per token)"""
         return len(text) // 4
     
-    def _trim_messages_to_fit(self, messages: List[Dict[str, str]], max_tokens: int = 8000) -> List[Dict[str, str]]:
+    def _trim_messages_to_fit(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
         """Trim messages from the beginning to fit within token limit"""
         if not messages:
             return messages
@@ -72,7 +73,7 @@ class AgentInstance:
         # Estimate current token usage
         total_tokens = sum(self._estimate_tokens(m['content']) for m in messages)
         
-        if total_tokens <= max_tokens:
+        if total_tokens <= self.max_context_tokens:
             return messages
         
         logger.warning(f"Context window approaching limit ({total_tokens} estimated tokens), trimming history for agent {self.name}")
@@ -87,7 +88,7 @@ class AgentInstance:
             other_messages = other_messages[:-1]
         
         # Remove oldest messages until we fit
-        while other_messages and total_tokens > max_tokens:
+        while other_messages and total_tokens > self.max_context_tokens:
             removed = other_messages.pop(0)
             total_tokens -= self._estimate_tokens(removed['content'])
         
@@ -98,26 +99,24 @@ class AgentInstance:
         
         return trimmed_messages
     
-    async def query(self, prompt: str, timeout: int = 300, max_context_tokens: int = 8000) -> str:
+    async def query(self, prompt: str) -> str:
         """Send query to model with timeout and context window management"""
         messages = []
         
         if self.personality:
             messages.append({"role": "system", "content": self.personality})
         
-        if self.context_type == "append":
+        # Add all conversation history (will be trimmed if needed)
+        if self.conversation_history:
             messages.extend(self.conversation_history)
-        elif self.context_type == "rolling" and self.conversation_history:
-            # Keep last 10 messages for rolling context
-            messages.extend(self.conversation_history[-10:])
         
         messages.append({"role": "user", "content": prompt})
         
         # Trim messages if needed to fit context window
-        messages = self._trim_messages_to_fit(messages, max_context_tokens)
+        messages = self._trim_messages_to_fit(messages)
         
         try:
-            # Add timeout to the chat call
+            # Add timeout to the chat call using agent-specific timeout
             response = await asyncio.wait_for(
                 asyncio.to_thread(
                     self.client.chat,
@@ -125,12 +124,12 @@ class AgentInstance:
                     messages=messages,
                     options={"temperature": self.temperature}
                 ),
-                timeout=timeout
+                timeout=self.query_timeout
             )
             
             result = response['message']['content']
             
-            # Update history
+            # Update history - always append to conversation history
             self.conversation_history.extend([
                 {"role": "user", "content": prompt},
                 {"role": "assistant", "content": result}
@@ -139,7 +138,7 @@ class AgentInstance:
             return result
             
         except asyncio.TimeoutError:
-            raise ActionError(f"Query timed out after {timeout}s for agent {self.name}")
+            raise ActionError(f"Query timed out after {self.query_timeout}s for agent {self.name}")
         except Exception as e:
             raise ActionError(f"Query failed for agent {self.name}: {e}")
     
@@ -154,7 +153,9 @@ class ScenarioExecutor:
     def __init__(self, scenario_path: str):
         self.scenario_path = scenario_path
         self.scenario = self._load_scenario()
-        self.output_dir = Path(self.scenario.get('config', {}).get('outputDirectory', './results'))
+        # Get output directory from metadata instead of config
+        metadata = self.scenario.get('metadata', {})
+        self.output_dir = Path(metadata.get('outputDirectory', './results'))
         self.backup_dir = self.output_dir / '.backup'
         self.agents: Dict[str, AgentInstance] = {}
         self.current_model: Optional[str] = None
@@ -185,9 +186,6 @@ class ScenarioExecutor:
         defined_agents = set(self.scenario['agents'].keys())
         defined_actions = set(self.scenario['actions'].keys())
         
-        # Get agent context types for validation
-        agent_contexts = {name: agent.get('contextType', 'clean') 
-                        for name, agent in self.scenario['agents'].items()}
         
         # Check workflow steps
         for i, step in enumerate(self.scenario['workflow']):
@@ -199,12 +197,7 @@ class ScenarioExecutor:
                 if agent_name not in defined_agents:
                     raise ValidationError(f"Step '{step_id}': Unknown agent '{agent_name}'. Available agents: {', '.join(sorted(defined_agents))}")
                 
-                # Validate that agents with 'clean' context type have output
-                if agent_contexts[agent_name] == 'clean' and 'output' not in step:
-                    raise ValidationError(
-                        f"Step '{step_id}': Agent '{agent_name}' has contextType 'clean' but no output specified. "
-                        f"Clean agents must produce output since they don't retain conversation history."
-                    )
+
             
             # Validate action exists
             action_name = step.get('action')
@@ -235,21 +228,6 @@ class ScenarioExecutor:
                 
                 # Recursively validate nested steps
                 self._validate_loop_steps(loop_steps)
-                
-                # Check for agent context validation in loop steps too
-                agent_contexts = {name: agent.get('contextType', 'clean') 
-                                for name, agent in self.scenario['agents'].items()}
-                
-                for j, loop_step in enumerate(loop_steps):
-                    loop_step_id = loop_step.get('id', f'loop_step_{j}')
-                    
-                    if 'agent' in loop_step:
-                        agent_name = loop_step['agent']
-                        if agent_contexts[agent_name] == 'clean' and 'output' not in loop_step:
-                            raise ValidationError(
-                                f"Loop step '{loop_step_id}': Agent '{agent_name}' has contextType 'clean' but no output specified. "
-                                f"Clean agents must produce output since they don't retain conversation history."
-                            )
     
     def _read_file(self, filepath: str) -> str:
         """Read file from output directory or absolute path"""
@@ -359,10 +337,10 @@ class ScenarioExecutor:
     
     async def execute(self):
         """Execute the scenario"""
-        config = self.scenario.get('config', {})
+        metadata = self.scenario.get('metadata', {})
         
-        # Setup logging
-        log_level = getattr(logging, config.get('logLevel', 'INFO').upper())
+        # Setup logging from metadata instead of config
+        log_level = getattr(logging, metadata.get('logLevel', 'INFO').upper())
         logging.getLogger().setLevel(log_level)
         
         # Setup output directory and backup directory
@@ -393,10 +371,11 @@ class ScenarioExecutor:
                 model=agent_def['model'],
                 temperature=agent_def.get('temperature', 0.7),
                 personality=agent_def.get('personality', ''),
-                context_type=agent_def.get('contextType', 'clean')
+                max_context_tokens=agent_def.get('maxContextTokens', 8000),
+                query_timeout=agent_def.get('queryTimeout', 300),
             )
             self.agents[agent_name] = agent
-            logger.info(f"Created agent: {agent_name} (model: {agent.model})")
+            logger.info(f"Created agent: {agent_name} (model: {agent.model}, context: {agent.max_context_tokens} tokens, timeout: {agent.query_timeout}s)")
     
     def _substitute_loop_variables(self, step: Dict[str, Any], loop_context: Dict[str, Any]) -> Dict[str, Any]:
         """Substitute loop variables in a step definition"""
@@ -651,15 +630,10 @@ class ScenarioExecutor:
                 logger.debug(f"Substituting {placeholder} with content: {content_preview}")
                 prompt = prompt.replace(placeholder, input_content)
         
-        # Get timeout from config
-        config = self.scenario.get('config', {})
-        timeout = config.get('queryTimeout', 500)
-        max_context = config.get('maxContextTokens', 124000)
-        
-        # Execute query
+        # Execute query using agent-specific settings
         logger.info(f"Agent {agent_name} executing: {action_name}")
         logger.debug(f"Final prompt length: {len(prompt)} characters")
-        result = await agent.query(prompt, timeout=timeout, max_context_tokens=max_context)
+        result = await agent.query(prompt)
         
         # Save output if specified
         if 'output' in step:

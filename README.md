@@ -9,7 +9,7 @@ A clean, human-readable system for orchestrating multi-agent conversations with 
 - **Multi-agent orchestration**: Coordinate multiple AI agents with different personalities
 - **Python execution testing**: Run and test generated Python code automatically
 - **Memory efficient**: Only one model loaded at a time
-- **Flexible context modes**: Control how agents remember conversations
+- **Automatic context management**: Agents automatically manage their conversation history
 - **Automatic validation**: Catches configuration errors before execution
 - **Built-in iteration support**: Loop through workflows with automatic variable substitution
 
@@ -39,7 +39,9 @@ A scenario file has four main sections:
   "metadata": {
     "name": "My Scenario",
     "version": "1.0",
-    "description": "What this scenario does"
+    "description": "What this scenario does",
+    "outputDirectory": "./results",
+    "logLevel": "info"
   },
   
   "agents": {
@@ -47,7 +49,8 @@ A scenario file has four main sections:
       "model": "gemma:2b",
       "temperature": 0.7,
       "personality": "You are a helpful assistant.",
-      "contextType": "clean"  // clean | append | rolling
+      "maxContextTokens": 8000,
+      "queryTimeout": 300
     }
   },
   
@@ -64,14 +67,7 @@ A scenario file has four main sections:
       "inputs": ["data.txt", "performance patterns"],
       "output": "analysis.md"
     }
-  ],
-  
-  "config": {
-    "logLevel": "info",
-    "outputDirectory": "./results",
-    "queryTimeout": 300,
-    "maxContextTokens": 8000
-  }
+  ]
 }
 ```
 
@@ -86,21 +82,28 @@ Define AI agents with specific models and personalities:
     "model": "gemma:2b",
     "temperature": 0.7,
     "personality": "You are an expert Python developer who writes clean, efficient code.",
-    "contextType": "rolling"
+    "maxContextTokens": 12000,
+    "queryTimeout": 400
   },
   "reviewer": {
     "model": "gemma:2b", 
     "temperature": 0.3,
     "personality": "You are a thorough code reviewer who provides constructive feedback.",
-    "contextType": "clean"
+    "maxContextTokens": 8000,
+    "queryTimeout": 300
   }
 }
 ```
 
-**Context Types:**
-- `clean`: Each query starts fresh
-- `append`: Full conversation history is maintained
-- `rolling`: Keep last 10 messages for context
+**Agent Configuration:**
+- `model`: The Ollama model to use (e.g., "gemma:2b", "llama2", "mistral")
+- `temperature`: Creativity level (0.0 to 1.0)
+- `personality`: System prompt defining the agent's role
+- `maxContextTokens`: Maximum tokens before trimming conversation history (default: 8000)
+- `queryTimeout`: Maximum seconds to wait for responses (default: 300)
+
+**Context Management:**
+All agents maintain their full conversation history until the context window approaches the limit, at which point older messages are automatically trimmed while preserving the system prompt and most recent interactions.
 
 ### Actions
 Actions are reusable prompt templates with numbered placeholders:
@@ -186,7 +189,7 @@ Execute Python scripts in a separate virtual environment and capture output:
 
 **Run Python Features:**
 - Executes in a separate `testenv` virtual environment
-- 60-second timeout (terminates early on errors)
+- 30-second timeout (terminates early on errors)
 - Captures both stdout and stderr
 - Supports command-line arguments
 - Returns execution status and output for agent analysis
@@ -207,7 +210,9 @@ deactivate
   "metadata": {
     "name": "Code Development with Testing",
     "version": "1.0",
-    "description": "Generate, execute, and analyze Python code"
+    "description": "Generate, execute, and analyze Python code",
+    "outputDirectory": "./code_test_output",
+    "logLevel": "info"
   },
   
   "agents": {
@@ -215,13 +220,15 @@ deactivate
       "model": "gemma:2b",
       "temperature": 0.7,
       "personality": "You are a Python developer who values clean, efficient code.",
-      "contextType": "append"
+      "maxContextTokens": 10000,
+      "queryTimeout": 400
     },
     "tester": {
       "model": "gemma:2b",
       "temperature": 0.3,
       "personality": "You are a QA engineer who analyzes code execution and identifies issues.",
-      "contextType": "clean"
+      "maxContextTokens": 8000,
+      "queryTimeout": 300
     }
   },
   
@@ -268,13 +275,7 @@ deactivate
       "inputs": ["visualization_fixed.py"],
       "output": "final_execution.log"
     }
-  ],
-  
-  "config": {
-    "outputDirectory": "./code_test_output",
-    "logLevel": "info",
-    "queryTimeout": 300
-  }
+  ]
 }
 ```
 
@@ -312,24 +313,28 @@ python cli.py scenario.json --quiet
 - `model`: The Ollama model to use (e.g., "gemma:2b", "llama2", "mistral")
 - `temperature`: Creativity level (0.0 to 1.0)
 - `personality`: System prompt defining the agent's role
-- `contextType`: How conversation history is managed
+- `maxContextTokens`: Maximum tokens before trimming conversation history (default: 8000)
+- `queryTimeout`: Maximum seconds to wait for model responses (default: 300)
 
-### Global Configuration
+### Metadata Configuration
+- `name`: Scenario name for identification
+- `version`: Scenario version
+- `description`: Brief description of what the scenario does
+- `outputDirectory`: Where to save output files (default: "./results")
 - `logLevel`: Logging verbosity ("debug", "info", "warning", "error")
-- `outputDirectory`: Where to save output files
-- `queryTimeout`: Maximum seconds to wait for model responses
-- `maxContextTokens`: Maximum tokens before trimming conversation history
 
 ## Tips & Best Practices
 
 1. **File Extensions**: Always include extensions (.py, .md, .txt) for better file handling
 2. **Action Design**: Keep actions focused on a single task for better reusability
-3. **Context Management**: Use `clearContext` between major workflow phases to avoid confusion
+3. **Context Management**: Use `clear_context` between major workflow phases to avoid confusion
 4. **Temperature Settings**: Lower temperatures (0.3) for analytical tasks, higher (0.7+) for creative tasks
-5. **Error Handling**: The system validates agent and action names before execution
-6. **Output Organization**: Use descriptive filenames to track workflow progress
-7. **Python Testing**: Use `run_python` to validate generated code automatically
-8. **Virtual Environment**: Keep `testenv` isolated with only necessary packages
+5. **Context Limits**: Adjust `maxContextTokens` based on your model's capabilities and task complexity
+6. **Timeout Settings**: Set longer `queryTimeout` for complex reasoning tasks
+7. **Error Handling**: The system validates agent and action names before execution
+8. **Output Organization**: Use descriptive filenames to track workflow progress
+9. **Python Testing**: Use `run_python` to validate generated code automatically
+10. **Virtual Environment**: Keep `testenv` isolated with only necessary packages
 
 ## Advanced Example: Competitive Development with Testing
 
@@ -337,7 +342,9 @@ python cli.py scenario.json --quiet
 {
   "metadata": {
     "name": "Competitive Development with Testing",
-    "version": "1.0"
+    "version": "1.0",
+    "outputDirectory": "./competitive_dev",
+    "logLevel": "info"
   },
   
   "agents": {
@@ -345,25 +352,29 @@ python cli.py scenario.json --quiet
       "model": "gemma:2b",
       "temperature": 0.8,
       "personality": "You favor creative, elegant solutions.",
-      "contextType": "rolling"
+      "maxContextTokens": 10000,
+      "queryTimeout": 450
     },
     "dev2": {
       "model": "gemma:2b",
       "temperature": 0.6,
       "personality": "You favor simple, performant solutions.",
-      "contextType": "rolling"
+      "maxContextTokens": 10000,
+      "queryTimeout": 450
     },
     "judge": {
       "model": "gemma:2b",
       "temperature": 0.3,
       "personality": "You evaluate code solutions objectively.",
-      "contextType": "clean"
+      "maxContextTokens": 15000,
+      "queryTimeout": 600
     },
     "tester": {
       "model": "gemma:2b",
       "temperature": 0.4,
       "personality": "You analyze execution results and identify runtime issues.",
-      "contextType": "clean"
+      "maxContextTokens": 8000,
+      "queryTimeout": 300
     }
   },
   
@@ -425,6 +436,10 @@ python cli.py scenario.json --quiet
           "agent": "judge",
           "inputs": ["solution1_round{{iteration}}.py", "solution2_round{{iteration}}.py"],
           "output": "evaluation_round{{iteration}}.md"
+        },
+        {
+          "action": "clear_context",
+          "agent": "tester"
         }
       ]
     }
@@ -444,9 +459,9 @@ python cli.py scenario.json --quiet
 - Ensure your inputs list has exactly that many items
 
 ### Context Window Errors
-- Use `contextType: "rolling"` for long conversations
-- Add `clearContext` actions between major phases
-- Reduce `maxContextTokens` in config if needed
+- Increase `maxContextTokens` in agent definition for complex conversations
+- Add `clear_context` actions between major phases
+- Consider breaking complex workflows into smaller steps
 
 ### Model Loading Issues
 - Ensure the model is installed: `ollama pull model_name`
@@ -458,6 +473,11 @@ python cli.py scenario.json --quiet
 - Install required packages in testenv: `source testenv/bin/activate && pip install package_name`
 - Check execution logs for specific error messages
 - Verify Python script syntax before execution
+
+### Agent Timeout Issues
+- Increase `queryTimeout` in agent definition for complex reasoning tasks
+- Monitor model performance and adjust timeouts accordingly
+- Consider using simpler prompts if timeouts persist
 
 ### Virtual Environment Setup
 ```bash
