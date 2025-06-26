@@ -11,7 +11,7 @@ import sys
 import copy
 from pathlib import Path
 from typing import Optional, Dict, Any
-from scenario_engine import ScenarioExecutor, ScenarioError, ValidationError # Updated import
+from scenario_engine import ScenarioExecutor, ScenarioError, ValidationError
 import jsonschema
 
 
@@ -30,7 +30,7 @@ def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
     )
 
 
-def load_schema() -> Dict[str, Any]:
+def load_schema() -> Optional[Dict[str, Any]]:
     """Load the JSON schema for validation"""
     schema_path = Path(__file__).parent / 'schema.json'
     if not schema_path.exists():
@@ -38,7 +38,7 @@ def load_schema() -> Dict[str, Any]:
         schema_path = Path('schema.json')
     
     try:
-        with open(schema_path, 'r') as f:
+        with open(schema_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
         print("Error: schema.json not found. Please ensure it's in the same directory as cli.py", file=sys.stderr)
@@ -49,12 +49,11 @@ def load_schema() -> Dict[str, Any]:
 
 
 def validate_scenario_file(path: str) -> Optional[Dict[str, Any]]:
-    """Validate scenario file structure using jsonschema"""
+    """Validate scenario file structure using jsonschema without modifying it."""
     try:
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             scenario = json.load(f)
         
-        # Load and validate against schema
         schema = load_schema()
         if not schema:
             return None
@@ -66,26 +65,22 @@ def validate_scenario_file(path: str) -> Optional[Dict[str, Any]]:
             return None
         
         # Additional validation: check for duplicate agent names
-        agent_names = [agent['name'] for agent in scenario['agents']]
+        agent_names = [agent['name'] for agent in scenario.get('agents', [])]
         if len(agent_names) != len(set(agent_names)):
-            duplicates = [name for name in agent_names if agent_names.count(name) > 1]
-            print(f"Error: Duplicate agent names found: {', '.join(set(duplicates))}", file=sys.stderr)
+            duplicates = {name for name in agent_names if agent_names.count(name) > 1}
+            print(f"Error: Duplicate agent names found: {', '.join(duplicates)}", file=sys.stderr)
             return None
         
         # Additional validation: check for duplicate action names
-        action_names = [action['name'] for action in scenario['actions']]
+        action_names = [action['name'] for action in scenario.get('actions', [])]
         if len(action_names) != len(set(action_names)):
-            duplicates = [name for name in action_names if action_names.count(name) > 1]
-            print(f"Error: Duplicate action names found: {', '.join(set(duplicates))}", file=sys.stderr)
+            duplicates = {name for name in action_names if action_names.count(name) > 1}
+            print(f"Error: Duplicate action names found: {', '.join(duplicates)}", file=sys.stderr)
             return None
         
-        # Convert arrays to dictionaries for easier access in other functions
-        agents_dict = {agent['name']: agent for agent in scenario['agents']}
-        actions_dict = {action['name']: action for action in scenario['actions']}
-        
-        scenario['agents'] = agents_dict
-        scenario['actions'] = actions_dict
-        
+        # --- MODIFICATION ---
+        # The function no longer converts lists to dictionaries.
+        # It returns the original, validated scenario structure.
         return scenario
         
     except json.JSONDecodeError as e:
@@ -97,33 +92,40 @@ def validate_scenario_file(path: str) -> Optional[Dict[str, Any]]:
 
 
 def print_scenario_info(scenario: Dict[str, Any]) -> None:
-    """Print information about a scenario"""
+    """Print information about a scenario, iterating over lists."""
     config = scenario.get('config', {})
     print(f"\nScenario: {config.get('name', 'Unnamed')}")
     print(f"Version: {config.get('version', 'N/A')}")
     if 'description' in config:
         print(f"Description: {config['description']}")
     
-    print(f"\nAgents: {len(scenario['agents'])}")
-    for name, agent in scenario['agents'].items():
+    # --- MODIFICATION: Iterate over list of agents ---
+    agents_list = scenario.get('agents', [])
+    print(f"\nAgents: {len(agents_list)}")
+    for agent in agents_list:
+        name = agent['name']
+        model = agent['model']
         temp = agent.get('temperature', 0.7)
         max_tokens = agent.get('maxContextTokens', 8000)
         timeout = agent.get('queryTimeout', 300)
-        print(f"  - {name}: {agent['model']} (temp: {temp}, context: {max_tokens} tokens, timeout: {timeout}s)")
+        print(f"  - {name}: {model} (temp: {temp}, context: {max_tokens} tokens, timeout: {timeout}s)")
     
-    print(f"\nActions: {len(scenario['actions'])}")
-    for name, action in scenario['actions'].items():
-        # Count input placeholders
+    # --- MODIFICATION: Iterate over list of actions ---
+    actions_list = scenario.get('actions', [])
+    print(f"\nActions: {len(actions_list)}")
+    for action in actions_list:
+        name = action['name']
         import re
         placeholders = re.findall(r'\{\{(\d+)\}\}', action['prompt'])
         input_count = len(set(placeholders))
         print(f"  - {name} ({input_count} inputs)")
     
-    print(f"\nWorkflow Steps: {len(scenario['workflow'])}")
+    print(f"\nWorkflow Steps: {len(scenario.get('workflow', []))}")
     
     # Configuration
     print(f"\nConfiguration:")
     print(f"  - Work Directory: {config.get('workDir', './results')}")
+    print(f"  - Python Timeout: {config.get('pythonTimeout', 30)}s")
     print(f"  - Log Level: {config.get('logLevel', 'INFO')}")
     print()
 
@@ -177,14 +179,13 @@ async def execute_single_iteration(scenario_path: str, loaded_scenario: Dict[str
         logger.info(f"Starting iteration {iteration}/{total_iterations}")
         
         try:
-            # Execute the scenario using the pre-validated and loaded scenario
-            executor = ScenarioExecutor(scenario_path, loaded_scenario) # Pass loaded_scenario here
+            # Pass the original, validated scenario to the executor
+            executor = ScenarioExecutor(scenario_path, loaded_scenario)
             await executor.execute()
             
             logger.info(f"✓ Iteration {iteration}/{total_iterations} completed successfully")
             
-            # Show output location
-            config = loaded_scenario.get('config', {}) # Use loaded_scenario
+            config = loaded_scenario.get('config', {})
             work_dir = config.get('workDir', './results')
             logger.info(f"  Outputs saved to: {work_dir}")
             
@@ -199,7 +200,7 @@ async def execute_single_iteration(scenario_path: str, loaded_scenario: Dict[str
         
     except KeyboardInterrupt:
         logger.warning(f"Iteration {iteration}/{total_iterations} cancelled by user")
-        raise  # Re-raise to stop all iterations
+        raise
         
     except Exception as e:
         logger.exception(f"Iteration {iteration}/{total_iterations} failed - Unexpected error: {e}")
@@ -211,47 +212,42 @@ async def main():
     parser = create_parser()
     args = parser.parse_args()
         
-    # Require scenario file for other operations
-    if not args.scenario:
+    if not args.scenario and not args.create_example:
         parser.print_help()
         sys.exit(1)
-    
-    # Validate repetitions argument
+
+    # Note: create_example handling would go here if implemented
+
     if args.repetitions < 1:
         print("Error: Number of repetitions must be at least 1", file=sys.stderr)
         sys.exit(1)
     
-    # Setup logging
     setup_logging(args.verbose, args.quiet)
     logger = logging.getLogger(__name__)
     
-    # Validate scenario
     scenario = validate_scenario_file(args.scenario)
     if not scenario:
         sys.exit(1)
     
-    # Handle info display
     if args.info:
         print_scenario_info(scenario)
         if args.repetitions > 1:
-            print(f"Note: Would run {args.repetitions} iterations with separate work directories")
+            print(f"Note: Would run {args.repetitions} iterations.")
         return
     
-    # Handle validation only
     if args.validate:
         print(f"✓ Scenario file is valid: {args.scenario}")
         if args.repetitions > 1:
             print(f"Will run {args.repetitions} iterations when executed")
         return
     
-    # Handle dry run
     if args.dry_run:
         print(f"Dry run of scenario: {args.scenario}")
         if args.repetitions > 1:
             print(f"Number of iterations: {args.repetitions}")
         print_scenario_info(scenario)
         print("Workflow steps:")
-        for i, step in enumerate(scenario['workflow'], 1):
+        for i, step in enumerate(scenario.get('workflow', []), 1):
             step_id = step.get('id', f'step_{i}')
             action = step['action']
             if 'agent' in step:
@@ -266,15 +262,8 @@ async def main():
                     print(f"      Iterations: {step.get('iterations', 1)}")
                 elif action == 'run_python':
                     print(f"      Python execution with inputs: {step.get('inputs', [])}")
-        
-        if args.repetitions > 1:
-            base_work_dir = scenario.get('config', {}).get('workDir', './results')
-            print(f"\nWork directories that will be created:")
-            for i in range(1, args.repetitions + 1):
-                print(f"  {base_work_dir}_{i}")
         return
     
-    # Execute scenario iterations
     try:
         if args.repetitions == 1:
             logger.info(f"Executing scenario: {args.scenario}")
@@ -285,7 +274,7 @@ async def main():
         failed_iterations = 0
         
         for iteration in range(1, args.repetitions + 1):
-            # Pass the loaded 'scenario' dictionary here
+            # Pass the original 'scenario' dictionary
             success = await execute_single_iteration(
                 args.scenario, scenario, iteration, args.repetitions, logger
             )
@@ -295,31 +284,19 @@ async def main():
             else:
                 failed_iterations += 1
             
-            # Add a small delay between iterations to ensure clean separation
-            if iteration < args.repetitions:
-                await asyncio.sleep(1)
+            # --- MODIFICATION: Removed unnecessary sleep ---
         
-        # Summary
-        if args.repetitions == 1:
-            if successful_iterations == 1:
-                print("\n✓ Scenario execution completed successfully")
-            else:
-                print("\n✗ Scenario execution failed")
-                sys.exit(1)
-        else:
+        if args.repetitions > 1:
             print(f"\n=== Execution Summary ===")
             print(f"Total iterations: {args.repetitions}")
             print(f"Successful: {successful_iterations}")
             print(f"Failed: {failed_iterations}")
-            
-            if successful_iterations == args.repetitions:
-                print("✓ All iterations completed successfully")
-            elif successful_iterations > 0:
-                print(f"⚠ {successful_iterations} of {args.repetitions} iterations completed successfully")
-                sys.exit(1)
-            else:
-                print("✗ All iterations failed")
-                sys.exit(1)
+        
+        if failed_iterations > 0:
+            print(f"\n✗ Scenario execution failed on {failed_iterations} iteration(s).")
+            sys.exit(1)
+        else:
+            print("\n✓ Scenario execution completed successfully.")
         
     except KeyboardInterrupt:
         print("\nOperation cancelled by user", file=sys.stderr)
