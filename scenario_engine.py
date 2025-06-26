@@ -151,69 +151,15 @@ class AgentInstance:
 class ScenarioExecutor:
     """Main scenario execution engine"""
     
-    def __init__(self, scenario_path: str):
+    def __init__(self, scenario_path: str, loaded_scenario: Dict[str, Any]):
         self.scenario_path = scenario_path
-        self.scenario = self._load_and_validate_scenario()
+        self.scenario = loaded_scenario
         # Get working directory from config
         config = self.scenario.get('config', {})
         self.output_dir = Path(config.get('workDir', './results'))
         self.backup_dir = self.output_dir / '.backup'
         self.agents: Dict[str, AgentInstance] = {}
         self.current_model: Optional[str] = None
-        
-    def _load_schema(self) -> Dict[str, Any]:
-        """Load the JSON schema for validation"""
-        schema_path = Path(__file__).parent / 'schema.json'
-        if not schema_path.exists():
-            # If schema.json is not in the same directory, try current directory
-            schema_path = Path('schema.json')
-        
-        try:
-            with open(schema_path, 'r') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            raise ScenarioError("schema.json not found. Please ensure it's in the same directory as scenario_engine.py")
-        except json.JSONDecodeError as e:
-            raise ScenarioError(f"Invalid JSON in schema file: {e}")
-    
-    def _load_and_validate_scenario(self) -> Dict[str, Any]:
-        """Load and validate scenario file using jsonschema"""
-        try:
-            with open(self.scenario_path, 'r') as f:
-                scenario = json.load(f)
-            
-            # Load and validate against schema
-            schema = self._load_schema()
-            try:
-                jsonschema.validate(instance=scenario, schema=schema)
-            except jsonschema.ValidationError as e:
-                raise ValidationError(f"Scenario validation failed: {e.message}")
-            
-            # Additional validation: check for duplicate agent names
-            agent_names = [agent['name'] for agent in scenario['agents']]
-            if len(agent_names) != len(set(agent_names)):
-                duplicates = [name for name in agent_names if agent_names.count(name) > 1]
-                raise ValidationError(f"Duplicate agent names found: {', '.join(set(duplicates))}")
-            
-            # Additional validation: check for duplicate action names
-            action_names = [action['name'] for action in scenario['actions']]
-            if len(action_names) != len(set(action_names)):
-                duplicates = [name for name in action_names if action_names.count(name) > 1]
-                raise ValidationError(f"Duplicate action names found: {', '.join(set(duplicates))}")
-            
-            # Convert arrays to dictionaries for easier access
-            agents_dict = {agent['name']: agent for agent in scenario['agents']}
-            actions_dict = {action['name']: action for action in scenario['actions']}
-            
-            scenario['agents'] = agents_dict
-            scenario['actions'] = actions_dict
-            
-            return scenario
-            
-        except json.JSONDecodeError as e:
-            raise ScenarioError(f"Invalid JSON in scenario file: {e}")
-        except FileNotFoundError:
-            raise ScenarioError(f"Scenario file not found: {self.scenario_path}")
     
     def _read_file(self, filepath: str) -> str:
         """Read file from output directory or absolute path"""
@@ -343,7 +289,6 @@ class ScenarioExecutor:
         logger.info(f"Starting scenario: {self.scenario.get('config', {}).get('name', 'Unnamed')}")
         
         try:
-            print(workflow_steps)
             await self._execute_steps(workflow_steps)
         finally:
             # Cleanup
@@ -669,30 +614,3 @@ class ScenarioExecutor:
         
         self.agents[agent_name].clear_context()
         logger.info(f"Cleared context for agent: {agent_name}")
-
-
-async def main():
-    """Example usage"""
-    import sys
-    
-    if len(sys.argv) < 2:
-        print("Usage: python scenario_engine.py <scenario.json>")
-        sys.exit(1)
-    
-    scenario_path = sys.argv[1]
-    
-    try:
-        executor = ScenarioExecutor(scenario_path)
-        await executor.execute()
-        logger.info("Scenario execution completed successfully")
-        
-    except ScenarioError as e:
-        logger.error(f"Scenario error: {e}")
-        sys.exit(1)
-    except Exception as e:
-        logger.exception(f"Unexpected error: {e}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

@@ -90,7 +90,7 @@
         },
         "workflow": {
             "type": "array",
-            "description": "Sequence of steps to execute",
+            "description": "TODO Proper Schema Sequence of steps to execute",
             "minItems": 1,
             "items": {}
         }

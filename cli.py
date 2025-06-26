@@ -11,7 +11,7 @@ import sys
 import copy
 from pathlib import Path
 from typing import Optional, Dict, Any
-from scenario_engine import ScenarioExecutor, ScenarioError, ValidationError
+from scenario_engine import ScenarioExecutor, ScenarioError, ValidationError # Updated import
 import jsonschema
 
 
@@ -171,20 +171,20 @@ Examples:
     return parser
 
 
-async def execute_single_iteration(scenario_path: str, scenario: Dict[str, Any], iteration: int, total_iterations: int, logger) -> bool:
+async def execute_single_iteration(scenario_path: str, loaded_scenario: Dict[str, Any], iteration: int, total_iterations: int, logger) -> bool:
     """Execute a single iteration of the scenario. Returns True if successful."""
     try:
         logger.info(f"Starting iteration {iteration}/{total_iterations}")
         
         try:
-            # Execute the scenario
-            executor = ScenarioExecutor(scenario_path)
+            # Execute the scenario using the pre-validated and loaded scenario
+            executor = ScenarioExecutor(scenario_path, loaded_scenario) # Pass loaded_scenario here
             await executor.execute()
             
             logger.info(f"✓ Iteration {iteration}/{total_iterations} completed successfully")
             
             # Show output location
-            config = iteration_scenario.get('config', {})
+            config = loaded_scenario.get('config', {}) # Use loaded_scenario
             work_dir = config.get('workDir', './results')
             logger.info(f"  Outputs saved to: {work_dir}")
             
@@ -285,6 +285,7 @@ async def main():
         failed_iterations = 0
         
         for iteration in range(1, args.repetitions + 1):
+            # Pass the loaded 'scenario' dictionary here
             success = await execute_single_iteration(
                 args.scenario, scenario, iteration, args.repetitions, logger
             )

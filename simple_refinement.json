@@ -51,7 +51,7 @@
     },
     {
       "name": "incorporateFeedback",
-      "prompt": "Here's your feedback for improving the cellular automata simulation:\n\n{{1}}\n\nRefine your previous cellular automata simulation based on this feedback. Provide the complete improved implementation, ensuring it's runnable.\n\n{{2}}\n\nThere is the code the last time it was written for reference."
+      "prompt": "Here's your feedback for improving the cellular automata simulation:\n\n{{1}}\n\nRefine your previous cellular automata simulation based on this feedback. Provide the complete improved implementation, ensuring it's runnable.\n\n{{2}}\n\nThere is the code the last time it was written for reference. remember, give me only a full complete solution incorperating all feedback without commentary"
     }
   ],
   "workflow": [
@@ -88,7 +88,8 @@
             "execution.log",
             "solution.py",
             "requirements.md"
-          ]
+          ],
+          "output": "analysis.md"
         },
         {
           "action": "provideShortFeedback",
