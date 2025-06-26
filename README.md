@@ -5,34 +5,45 @@ A clean, human-readable system for orchestrating multi-agent conversations with 
 ## Key Features
 
 - **Simple JSON scenarios**: Easy-to-write, easy-to-understand configuration files
+- **Schema validation**: Automatic validation against JSON schema ensures correctness
 - **File-based workflow**: All inputs and outputs are files - no complex variable tracking
 - **Multi-agent orchestration**: Coordinate multiple AI agents with different personalities
 - **Python execution testing**: Run and test generated Python code automatically
 - **Memory efficient**: Only one model loaded at a time
 - **Automatic context management**: Agents automatically manage their conversation history
-- **Automatic validation**: Catches configuration errors before execution
 - **Built-in iteration support**: Loop through workflows with automatic variable substitution
 
 ## Quick Start
 
 1. Ensure Ollama is running (`ollama serve`)
-2. Create a `testenv` virtual environment in your project directory:
+2. Install required Python packages:
+   ```bash
+   pip install jsonschema
+   ```
+3. Create a `testenv` virtual environment in your project directory:
    ```bash
    python -m venv testenv
    source testenv/bin/activate
    pip install matplotlib numpy  # Install required packages
    deactivate
    ```
-3. Create a scenario file (see examples below)
-4. Run the scenario:
+4. Create a scenario file (see examples below)
+5. Run the scenario:
 
 ```bash
 python cli.py my_scenario.json
 ```
 
+## Required Files
+
+The system requires two essential files in the same directory:
+- `schema.json`: Defines the structure and validation rules for scenario files
+- `scenario_engine.py`: The main execution engine
+- `cli.py`: Command-line interface
+
 ## Scenario Structure
 
-A scenario file has four main sections:
+A scenario file must conform to the JSON schema and has these main sections:
 
 ```json
 {
@@ -44,21 +55,23 @@ A scenario file has four main sections:
     "logLevel": "info"
   },
   
-  "agents": {
-    "assistant": {
+  "agents": [
+    {
+      "name": "assistant",
       "model": "gemma:2b",
       "temperature": 0.7,
       "personality": "You are a helpful assistant.",
       "maxContextTokens": 8000,
       "queryTimeout": 300
     }
-  },
+  ],
   
-  "actions": {
-    "analyze": {
+  "actions": [
+    {
+      "name": "analyze",
       "prompt": "Analyze this {{1}} and provide insights about {{2}}"
     }
-  },
+  ],
   
   "workflow": [
     {
@@ -74,49 +87,54 @@ A scenario file has four main sections:
 ## Core Concepts
 
 ### Agents
-Define AI agents with specific models and personalities:
+Define AI agents with specific models and personalities. Agents are defined as an array, with each agent having a unique name:
 
 ```json
-"agents": {
-  "developer": {
+"agents": [
+  {
+    "name": "developer",
     "model": "gemma:2b",
     "temperature": 0.7,
     "personality": "You are an expert Python developer who writes clean, efficient code.",
     "maxContextTokens": 12000,
     "queryTimeout": 400
   },
-  "reviewer": {
+  {
+    "name": "reviewer",
     "model": "gemma:2b", 
     "temperature": 0.3,
     "personality": "You are a thorough code reviewer who provides constructive feedback.",
     "maxContextTokens": 8000,
     "queryTimeout": 300
   }
-}
+]
 ```
 
 **Agent Configuration:**
-- `model`: The Ollama model to use (e.g., "gemma:2b", "llama2", "mistral")
-- `temperature`: Creativity level (0.0 to 1.0)
-- `personality`: System prompt defining the agent's role
-- `maxContextTokens`: Maximum tokens before trimming conversation history (default: 8000)
-- `queryTimeout`: Maximum seconds to wait for responses (default: 300)
+- `name`: Unique identifier for the agent (required)
+- `model`: The Ollama model to use (required)
+- `temperature`: Creativity level (0.0 to 1.0, optional, default: 0.7)
+- `personality`: System prompt defining the agent's role (optional)
+- `maxContextTokens`: Maximum tokens before trimming conversation history (optional, default: 8000)
+- `queryTimeout`: Maximum seconds to wait for responses (optional, default: 300)
 
 **Context Management:**
 All agents maintain their full conversation history until the context window approaches the limit, at which point older messages are automatically trimmed while preserving the system prompt and most recent interactions.
 
 ### Actions
-Actions are reusable prompt templates with numbered placeholders:
+Actions are reusable prompt templates with numbered placeholders. Actions are defined as an array, with each action having a unique name:
 
 ```json
-"actions": {
-  "writeCode": {
+"actions": [
+  {
+    "name": "writeCode",
     "prompt": "Write a {{1}} function that {{2}}. Use best practices and include docstrings."
   },
-  "reviewCode": {
+  {
+    "name": "reviewCode",
     "prompt": "Review this {{1}} code:\n\n{{2}}\n\nFocus on: {{3}}"
   }
-}
+]
 ```
 
 ### Workflow
@@ -210,6 +228,17 @@ pip install matplotlib numpy pandas  # Install packages as needed
 deactivate
 ```
 
+## Schema Validation
+
+All scenario files are automatically validated against the JSON schema before execution. The validation ensures:
+
+1. **Required fields are present**: `agents` and `actions` arrays must exist
+2. **Field types are correct**: All fields have the expected data types
+3. **No duplicate names**: Agent names and action names must be unique within their respective arrays
+4. **Workflow references are valid**: The system validates that all agent and action references in the workflow exist
+
+If validation fails, you'll receive clear error messages indicating what needs to be fixed.
+
 ## Complete Example: Code Development with Testing
 
 ```json
@@ -222,34 +251,39 @@ deactivate
     "logLevel": "info"
   },
   
-  "agents": {
-    "developer": {
+  "agents": [
+    {
+      "name": "developer",
       "model": "gemma:2b",
       "temperature": 0.7,
       "personality": "You are a Python developer who values clean, efficient code.",
       "maxContextTokens": 10000,
       "queryTimeout": 400
     },
-    "tester": {
+    {
+      "name": "tester",
       "model": "gemma:2b",
       "temperature": 0.3,
       "personality": "You are a QA engineer who analyzes code execution and identifies issues.",
       "maxContextTokens": 8000,
       "queryTimeout": 300
     }
-  },
+  ],
   
-  "actions": {
-    "implement": {
+  "actions": [
+    {
+      "name": "implement",
       "prompt": "Implement a {{1}} that {{2}}. Include proper error handling and documentation."
     },
-    "analyzeExecution": {
+    {
+      "name": "analyzeExecution",
       "prompt": "Analyze this execution output:\n\n{{1}}\n\nIdentify any issues, errors, or improvements needed."
     },
-    "fixIssues": {
+    {
+      "name": "fixIssues",
       "prompt": "Fix the issues in this code based on the execution analysis:\n\nOriginal Code:\n{{1}}\n\nExecution Analysis:\n{{2}}"
     }
-  },
+  ],
   
   "workflow": [
     {
@@ -292,7 +326,7 @@ deactivate
 # Run a scenario
 python cli.py scenario.json
 
-# Run multiple times (creates separate output directories)
+# Run multiple times (uses same workDir but keeps backups)
 python cli.py scenario.json 3
 
 # Validate scenario without executing
@@ -316,12 +350,17 @@ python cli.py scenario.json --quiet
 
 ## Configuration Options
 
-### Configuration Options
-- `model`: The Ollama model to use (e.g., "gemma:2b", "llama2", "mistral")
-- `temperature`: Creativity level (0.0 to 1.0)
+### Agent Options
+- `name`: Unique identifier for the agent (required)
+- `model`: The Ollama model to use (required)
+- `temperature`: Creativity level (0.0 to 1.0, default: 0.7)
 - `personality`: System prompt defining the agent's role
 - `maxContextTokens`: Maximum tokens before trimming conversation history (default: 8000)
 - `queryTimeout`: Maximum seconds to wait for model responses (default: 300)
+
+### Action Options
+- `name`: Unique identifier for the action (required)
+- `prompt`: Template string with {{1}}, {{2}}, etc. placeholders (required)
 
 ### Config Section
 - `name`: Scenario name for identification
@@ -332,130 +371,26 @@ python cli.py scenario.json --quiet
 
 ## Tips & Best Practices
 
-1. **Input Rules**: Use inputs without spaces for filenames, inputs with spaces for literal text
-2. **File Extensions**: Include extensions (.py, .md, .txt) for clarity in file outputs
-3. **Action Design**: Keep actions focused on a single task for better reusability
-4. **Context Management**: Use `clear_context` between major workflow phases to avoid confusion
-5. **Temperature Settings**: Lower temperatures (0.3) for analytical tasks, higher (0.7+) for creative tasks
-6. **Context Limits**: Adjust `maxContextTokens` based on your model's capabilities and task complexity
-7. **Timeout Settings**: Set longer `queryTimeout` for complex reasoning tasks
-8. **Error Handling**: The system validates agent and action names before execution
-9. **Work Directory**: Use descriptive work directory names to organize different scenario runs
-10. **Python Testing**: Use `run_python` to validate generated code automatically
-11. **Virtual Environment**: Keep `testenv` isolated with only necessary packages
-
-## Advanced Example: Competitive Development with Testing
-
-```json
-{
-  "config": {
-    "name": "Competitive Development with Testing",
-    "version": "1.0",
-    "workDir": "./competitive_dev",
-    "logLevel": "info"
-  },
-  
-  "agents": {
-    "dev1": {
-      "model": "gemma:2b",
-      "temperature": 0.8,
-      "personality": "You favor creative, elegant solutions.",
-      "maxContextTokens": 10000,
-      "queryTimeout": 450
-    },
-    "dev2": {
-      "model": "gemma:2b",
-      "temperature": 0.6,
-      "personality": "You favor simple, performant solutions.",
-      "maxContextTokens": 10000,
-      "queryTimeout": 450
-    },
-    "judge": {
-      "model": "gemma:2b",
-      "temperature": 0.3,
-      "personality": "You evaluate code solutions objectively.",
-      "maxContextTokens": 15000,
-      "queryTimeout": 600
-    },
-    "tester": {
-      "model": "gemma:2b",
-      "temperature": 0.4,
-      "personality": "You analyze execution results and identify runtime issues.",
-      "maxContextTokens": 8000,
-      "queryTimeout": 300
-    }
-  },
-  
-  "actions": {
-    "solve": {
-      "prompt": "Solve this problem: {{1}}\n\nFocus on your strengths."
-    },
-    "evaluate": {
-      "prompt": "Compare these two solutions:\n\nSolution 1:\n{{1}}\n\nSolution 2:\n{{2}}\n\nWhich is better and why?"
-    },
-    "analyzeExecution": {
-      "prompt": "Analyze this execution output:\n\n{{1}}\n\nReport on performance, errors, and functionality."
-    }
-  },
-  
-  "workflow": [
-    {
-      "action": "loop",
-      "iterations": 3,
-      "steps": [
-        {
-          "action": "solve",
-          "agent": "dev1",
-          "inputs": ["implement a sorting algorithm (round {{iteration}})"],
-          "output": "solution1_round{{iteration}}.py",
-          "format": "python"
-        },
-        {
-          "action": "solve", 
-          "agent": "dev2",
-          "inputs": ["implement a sorting algorithm (round {{iteration}})"],
-          "output": "solution2_round{{iteration}}.py",
-          "format": "python"
-        },
-        {
-          "action": "run_python",
-          "inputs": ["solution1_round{{iteration}}.py"],
-          "output": "execution1_round{{iteration}}.log"
-        },
-        {
-          "action": "run_python",
-          "inputs": ["solution2_round{{iteration}}.py"],
-          "output": "execution2_round{{iteration}}.log"
-        },
-        {
-          "action": "analyzeExecution",
-          "agent": "tester",
-          "inputs": ["execution1_round{{iteration}}.log"],
-          "output": "analysis1_round{{iteration}}.md"
-        },
-        {
-          "action": "analyzeExecution",
-          "agent": "tester",
-          "inputs": ["execution2_round{{iteration}}.log"],
-          "output": "analysis2_round{{iteration}}.md"
-        },
-        {
-          "action": "evaluate",
-          "agent": "judge",
-          "inputs": ["solution1_round{{iteration}}.py", "solution2_round{{iteration}}.py"],
-          "output": "evaluation_round{{iteration}}.md"
-        },
-        {
-          "action": "clear_context",
-          "agent": "tester"
-        }
-      ]
-    }
-  ]
-}
-```
+1. **Schema Compliance**: Always ensure your scenario file validates against the schema
+2. **Unique Names**: Agent and action names must be unique
+3. **Input Rules**: Use inputs without spaces for filenames, inputs with spaces for literal text
+4. **File Extensions**: Include extensions (.py, .md, .txt) for clarity in file outputs
+5. **Action Design**: Keep actions focused on a single task for better reusability
+6. **Context Management**: Use `clear_context` between major workflow phases to avoid confusion
+7. **Temperature Settings**: Lower temperatures (0.3) for analytical tasks, higher (0.7+) for creative tasks
+8. **Context Limits**: Adjust `maxContextTokens` based on your model's capabilities and task complexity
+9. **Timeout Settings**: Set longer `queryTimeout` for complex reasoning tasks
+10. **Work Directory**: Use descriptive work directory names to organize different scenario runs
+11. **Python Testing**: Use `run_python` to validate generated code automatically
+12. **Virtual Environment**: Keep `testenv` isolated with only necessary packages
 
 ## Troubleshooting
+
+### Schema Validation Errors
+- Ensure your JSON is valid (use a JSON validator)
+- Check that all required fields are present
+- Verify that agent and action names are unique
+- Make sure field types match the schema (arrays vs objects)
 
 ### File Not Found Errors
 - Ensure the file was created in a previous step
@@ -466,10 +401,6 @@ python cli.py scenario.json --quiet
 - Remember: inputs with spaces = literal text, inputs without spaces = file names
 - If you need a literal filename with spaces, use a symlink or rename the file
 - Check work directory for file existence
-
-### Input Count Mismatch
-- Count the {{1}}, {{2}}, etc. placeholders in your action prompt
-- Ensure your inputs list has exactly that many items
 
 ### Context Window Errors
 - Increase `maxContextTokens` in agent definition for complex conversations

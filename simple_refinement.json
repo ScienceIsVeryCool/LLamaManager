@@ -4,48 +4,56 @@
     "version": "1.0",
     "description": "One developer creates a solution, which is then tested and reviewed, with concise feedback provided for refinement.",
     "logLevel": "info",
-    "workDir": "./simplified_scenario_output_all_day"
+    "workDir": "./simple_schema_evening"
   },
-  "agents": {
-    "developer": {
-      "model": "gemma3:12b",
+  "agents": [
+    {
+      "model": "gemma3:4b",
+      "name": "developer",
       "temperature": 0.5,
       "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
       "queryTimeout": 120,
-      "maxContextTokens": 124000 
+      "maxContextTokens": 124000
     },
-    "reviewer": {
-      "model": "gemma3:12b",
+    {
+      "model": "gemma3:4b",
+      "name": "reviewer",
       "temperature": 0.3,
       "personality": "You are a Senior Python Engineer evaluating competing implementations. You value both creativity and practicality. Be direct about strengths and weaknesses. Consider performance, visual appeal, code quality, and how well the solution meets requirements. Provide balanced feedback to both developers.",
       "queryTimeout": 120,
-      "maxContextTokens": 124000 
+      "maxContextTokens": 124000
     },
-    "bossman": {
-      "model": "gemma3:12b",
+    {
+      "model": "gemma3:4b",
+      "name": "bossman",
       "temperature": 0.5,
       "personality": "You are The Boss Man. You have the vision where others don't. You always push for just outside the realm of possible.",
       "queryTimeout": 120,
-      "maxContextTokens": 124000 
+      "maxContextTokens": 124000
     }
-  },
-  "actions": {
-    "draftRequirements": {
+  ],
+  "actions": [
+    {
+      "name": "draftRequirements",
       "prompt": "Write some thoughtful requirements a developer would need in order to complete a Python script for a cool and innovative evolution simulation with real-time visualization. Think about what a good but short python script could accomplish and give me the spec."
     },
-    "initialSolution": {
+    {
+      "name": "initialSolution",
       "prompt": "Write a complete Python script for a cool and innovative cellular automata simulation with real-time visualization based on these requirements: \n\n{{1}}\n\n. Provide the full runnable code. Use print statements for logging as someone will be testing your code with those print statements"
     },
-    "analyzeExecutionAndSuggest": {
+    {
+      "name": "analyzeExecutionAndSuggest",
       "prompt": "Analyze this execution log:\n\n{{1}}\n\nSomething about the logs is that if you get exit status -1 and a 60 second timeout, that is something hard coded meaning the app ran for 60 seconds without crashing. Do not take those indicators alone as proof of failure. If that is all the info provided, ask for more logging. Provide a summary of the log, including any errors or unexpected behavior. If logs ar enot sufficient, ask the developer to add more in the correct places. Then, summarize how to fix any identified errors and/or suggest features to add to the code for improvement.\n Here is the code for reference:\n\n{{2}}\n\n and here were the original requirements: \n\n{{3}}"
     },
-    "provideShortFeedback": {
+    {
+      "name": "provideShortFeedback",
       "prompt": "Based on what you saw, what are the points for the dev to address in the next iteration? Make sure takeaways are actionable for the developer. Keep in mind the developer will NOT be able to see the log output, so please inform them of any line numbers and/or code snippets they will need for context."
     },
-    "incorporateFeedback": {
+    {
+      "name": "incorporateFeedback",
       "prompt": "Here's your feedback for improving the cellular automata simulation:\n\n{{1}}\n\nRefine your previous cellular automata simulation based on this feedback. Provide the complete improved implementation, ensuring it's runnable.\n\n{{2}}\n\nThere is the code the last time it was written for reference."
     }
-  },
+  ],
   "workflow": [
     {
       "action": "draftRequirements",
@@ -56,24 +64,31 @@
     {
       "action": "initialSolution",
       "agent": "developer",
-      "inputs": ["requirements.md"],
+      "inputs": [
+        "requirements.md"
+      ],
       "output": "solution.py",
       "format": "python"
     },
     {
       "action": "run_python",
-      "inputs": ["solution.py"],
+      "inputs": [
+        "solution.py"
+      ],
       "output": "execution.log"
     },
     {
       "action": "loop",
       "iterations": 7,
-      "steps": 
-      [
+      "steps": [
         {
           "action": "analyzeExecutionAndSuggest",
           "agent": "reviewer",
-          "inputs": ["execution.log", "solution.py", "requirements.md"]
+          "inputs": [
+            "execution.log",
+            "solution.py",
+            "requirements.md"
+          ]
         },
         {
           "action": "provideShortFeedback",
@@ -83,13 +98,18 @@
         {
           "action": "incorporateFeedback",
           "agent": "developer",
-          "inputs": ["code_review.md", "solution.py"],
+          "inputs": [
+            "code_review.md",
+            "solution.py"
+          ],
           "output": "solution.py",
           "format": "python"
         },
         {
           "action": "run_python",
-          "inputs": ["solution.py"],
+          "inputs": [
+            "solution.py"
+          ],
           "output": "execution.log"
         },
         {

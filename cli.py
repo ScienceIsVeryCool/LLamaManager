@@ -12,6 +12,7 @@ import copy
 from pathlib import Path
 from typing import Optional, Dict, Any
 from scenario_engine import ScenarioExecutor, ScenarioError, ValidationError
+import jsonschema
 
 
 def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
@@ -29,50 +30,61 @@ def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
     )
 
 
+def load_schema() -> Dict[str, Any]:
+    """Load the JSON schema for validation"""
+    schema_path = Path(__file__).parent / 'schema.json'
+    if not schema_path.exists():
+        # If schema.json is not in the same directory, try current directory
+        schema_path = Path('schema.json')
+    
+    try:
+        with open(schema_path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print("Error: schema.json not found. Please ensure it's in the same directory as cli.py", file=sys.stderr)
+        return None
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON in schema file: {e}", file=sys.stderr)
+        return None
+
+
 def validate_scenario_file(path: str) -> Optional[Dict[str, Any]]:
-    """Validate scenario file structure"""
+    """Validate scenario file structure using jsonschema"""
     try:
         with open(path, 'r') as f:
             scenario = json.load(f)
         
-        # Check required sections
-        required = ['agents', 'actions', 'workflow']
-        missing = [s for s in required if s not in scenario]
-        
-        if missing:
-            print(f"Error: Scenario missing required sections: {', '.join(missing)}", file=sys.stderr)
+        # Load and validate against schema
+        schema = load_schema()
+        if not schema:
             return None
-        
-        # Check for at least one agent
-        if not scenario['agents']:
-            print("Error: No agents defined", file=sys.stderr)
-            return None
-        
-        # Check for at least one workflow step
-        if not scenario['workflow']:
-            print("Error: No workflow steps defined", file=sys.stderr)
-            return None
-        
-        # Validate agent references and action references
-        defined_agents = set(scenario['agents'].keys())
-        defined_actions = set(scenario['actions'].keys())
-        
-        for i, step in enumerate(scenario['workflow']):
-            step_id = step.get('id', f'step_{i}')
             
-            # Check agent exists
-            if 'agent' in step:
-                agent_name = step['agent']
-                if agent_name not in defined_agents:
-                    print(f"Error: Step '{step_id}': Unknown agent '{agent_name}'", file=sys.stderr)
-                    return None
-            
-            # Check action exists
-            action_name = step.get('action')
-            if action_name and action_name not in ['loop', 'clear_context', 'run_python', 'user_input', 'apply_patch']:
-                if action_name not in defined_actions:
-                    print(f"Error: Step '{step_id}': Unknown action '{action_name}'", file=sys.stderr)
-                    return None
+        try:
+            jsonschema.validate(instance=scenario, schema=schema)
+        except jsonschema.ValidationError as e:
+            print(f"Error: Scenario validation failed: {e.message}", file=sys.stderr)
+            return None
+        
+        # Additional validation: check for duplicate agent names
+        agent_names = [agent['name'] for agent in scenario['agents']]
+        if len(agent_names) != len(set(agent_names)):
+            duplicates = [name for name in agent_names if agent_names.count(name) > 1]
+            print(f"Error: Duplicate agent names found: {', '.join(set(duplicates))}", file=sys.stderr)
+            return None
+        
+        # Additional validation: check for duplicate action names
+        action_names = [action['name'] for action in scenario['actions']]
+        if len(action_names) != len(set(action_names)):
+            duplicates = [name for name in action_names if action_names.count(name) > 1]
+            print(f"Error: Duplicate action names found: {', '.join(set(duplicates))}", file=sys.stderr)
+            return None
+        
+        # Convert arrays to dictionaries for easier access in other functions
+        agents_dict = {agent['name']: agent for agent in scenario['agents']}
+        actions_dict = {action['name']: action for action in scenario['actions']}
+        
+        scenario['agents'] = agents_dict
+        scenario['actions'] = actions_dict
         
         return scenario
         
@@ -114,102 +126,6 @@ def print_scenario_info(scenario: Dict[str, Any]) -> None:
     print(f"  - Work Directory: {config.get('workDir', './results')}")
     print(f"  - Log Level: {config.get('logLevel', 'INFO')}")
     print()
-
-
-def create_example_scenario(output_path: str) -> None:
-    """Create an example scenario file"""
-    example = {
-        "config": {
-            "name": "Code Review Example",
-            "version": "2.0",
-            "description": "A simple example showing iterative code development with review",
-            "workDir": "./results",
-            "logLevel": "info"
-        },
-        "agents": {
-            "developer": {
-                "model": "gemma:2b",
-                "temperature": 0.7,
-                "personality": "You are a helpful developer who writes clean Python code.",
-                "maxContextTokens": 8000,
-                "queryTimeout": 300
-            },
-            "reviewer": {
-                "model": "gemma:2b",
-                "temperature": 0.3,
-                "personality": "You are a code reviewer who provides constructive feedback.",
-                "maxContextTokens": 12000,
-                "queryTimeout": 400
-            }
-        },
-        "actions": {
-            "writeCode": {
-                "prompt": "Write a Python function that {{1}}"
-            },
-            "reviewCode": {
-                "prompt": "Review this code and suggest improvements:\n\n{{1}}"
-            },
-            "improveCode": {
-                "prompt": "Improve this code based on the feedback:\n\nOriginal code:\n{{1}}\n\nFeedback:\n{{2}}"
-            },
-            "createFinalReport": {
-                "prompt": "Create a summary report:\n\n# Code Development Summary\n\n## Initial Implementation\n{{1}}\n\n## Review Feedback\n{{2}}\n\n## Final Implementation\n{{3}}\n\nAdd your analysis of the improvements made."
-            }
-        },
-        "workflow": [
-            {
-                "action": "writeCode",
-                "agent": "developer",
-                "inputs": ["calculates the factorial of a number"],
-                "output": "initial_code.md"
-            },
-            {
-                "action": "reviewCode",
-                "agent": "reviewer",
-                "inputs": ["initial_code.md"],
-                "output": "review_feedback.md"
-            },
-            {
-                "action": "improveCode",
-                "agent": "developer",
-                "inputs": ["initial_code.md", "review_feedback.md"],
-                "output": "improved_code.md"
-            },
-            {
-                "action": "createFinalReport",
-                "agent": "reviewer",
-                "inputs": ["initial_code.md", "review_feedback.md", "improved_code.md"],
-                "output": "development_report.md"
-            },
-            {
-                "action": "improveCode",
-                "agent": "developer",
-                "inputs": ["improved_code.md", "Focus on extracting just the code"],
-                "output": "factorial.py",
-                "format": "python"
-            }
-        ]
-    }
-    
-    with open(output_path, 'w') as f:
-        json.dump(example, f, indent=2)
-    
-    print(f"Created example scenario: {output_path}")
-
-
-def update_output_directory(scenario: Dict[str, Any], iteration: int) -> Dict[str, Any]:
-    """Update the work directory for the current iteration"""
-    scenario_copy = copy.deepcopy(scenario)
-    
-    # Work directory is now in config
-    if 'config' in scenario_copy and 'workDir' in scenario_copy['config']:
-        original_dir = scenario_copy['config']['workDir']
-        # Remove trailing slash if present
-        original_dir = original_dir.rstrip('/')
-        scenario_copy['config']['workDir'] = f"{original_dir}_{iteration}"
-    
-    return scenario_copy
-
 
 def create_parser() -> argparse.ArgumentParser:
     """Create and configure argument parser"""
@@ -260,18 +176,9 @@ async def execute_single_iteration(scenario_path: str, scenario: Dict[str, Any],
     try:
         logger.info(f"Starting iteration {iteration}/{total_iterations}")
         
-        # Update scenario with iteration-specific output directory
-        iteration_scenario = update_output_directory(scenario, iteration)
-        
-        # Create a temporary scenario file for this iteration
-        temp_scenario_path = f"{scenario_path}.temp_iter_{iteration}"
-        
         try:
-            with open(temp_scenario_path, 'w') as f:
-                json.dump(iteration_scenario, f, indent=2)
-            
             # Execute the scenario
-            executor = ScenarioExecutor(temp_scenario_path)
+            executor = ScenarioExecutor(scenario_path)
             await executor.execute()
             
             logger.info(f"✓ Iteration {iteration}/{total_iterations} completed successfully")
@@ -284,11 +191,7 @@ async def execute_single_iteration(scenario_path: str, scenario: Dict[str, Any],
             return True
             
         finally:
-            # Clean up temporary file
-            try:
-                Path(temp_scenario_path).unlink()
-            except FileNotFoundError:
-                pass
+            pass
             
     except (ScenarioError, ValidationError) as e:
         logger.error(f"Iteration {iteration}/{total_iterations} failed - {type(e).__name__}: {e}")
@@ -307,12 +210,7 @@ async def main():
     """Main CLI entry point"""
     parser = create_parser()
     args = parser.parse_args()
-    
-    # Handle example creation
-    if args.create_example:
-        create_example_scenario(args.create_example)
-        return
-    
+        
     # Require scenario file for other operations
     if not args.scenario:
         parser.print_help()

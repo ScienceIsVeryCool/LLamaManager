@@ -1,0 +1,102 @@
+{
+    "type": "object",
+    "description": "Schema for Ollama multi-agent scenario configuration files",
+    "additionalProperties": false,
+    "properties": {
+        "config": {
+            "type": "object",
+            "description": "Optional configuration settings for the scenario",
+            "additionalProperties": true,
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Human-readable name for the scenario"
+                },
+                "version": {
+                    "type": "string",
+                    "description": "Version identifier for the scenario"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Brief description of what the scenario accomplishes"
+                },
+                "logLevel": {
+                    "type": "string",
+                    "description": "Logging verbosity level",
+                    "default": "info",
+                    "enum": [
+                        "debug",
+                        "info",
+                        "warning",
+                        "error"
+                    ]
+                },
+                "workDir": {
+                    "type": "string",
+                    "description": "Working directory where files are saved and commands executed",
+                    "default": "./results"
+                }
+            }
+        },
+        "agents": {
+            "type": "array",
+            "description": "Agent definitions",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "model": {
+                        "type": "string"
+                    },
+                    "personality": {
+                        "type": "string"
+                    },
+                    "temperature": {
+                        "type": "number"
+                    },
+                    "queryTimeout": {
+                        "type": "integer"
+                    },
+                    "maxContextTokens": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "model",
+                    "name"
+                ]
+            }
+        },
+        "actions": {
+            "type": "array",
+            "description": "Action definitions",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "prompt": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "prompt",
+                    "name"
+                ]
+            }
+        },
+        "workflow": {
+            "type": "array",
+            "description": "Sequence of steps to execute",
+            "minItems": 1,
+            "items": {}
+        }
+    },
+    "required": [
+        "agents",
+        "actions"
+    ]
+}

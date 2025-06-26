@@ -15,6 +15,7 @@ from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass, field
 import ollama
+import jsonschema
 
 # Configure logging
 logging.basicConfig(
@@ -152,26 +153,60 @@ class ScenarioExecutor:
     
     def __init__(self, scenario_path: str):
         self.scenario_path = scenario_path
-        self.scenario = self._load_scenario()
+        self.scenario = self._load_and_validate_scenario()
         # Get working directory from config
         config = self.scenario.get('config', {})
         self.output_dir = Path(config.get('workDir', './results'))
         self.backup_dir = self.output_dir / '.backup'
         self.agents: Dict[str, AgentInstance] = {}
         self.current_model: Optional[str] = None
-        self._validate_scenario()
         
-    def _load_scenario(self) -> Dict[str, Any]:
-        """Load and validate scenario file structure"""
+    def _load_schema(self) -> Dict[str, Any]:
+        """Load the JSON schema for validation"""
+        schema_path = Path(__file__).parent / 'schema.json'
+        if not schema_path.exists():
+            # If schema.json is not in the same directory, try current directory
+            schema_path = Path('schema.json')
+        
+        try:
+            with open(schema_path, 'r') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            raise ScenarioError("schema.json not found. Please ensure it's in the same directory as scenario_engine.py")
+        except json.JSONDecodeError as e:
+            raise ScenarioError(f"Invalid JSON in schema file: {e}")
+    
+    def _load_and_validate_scenario(self) -> Dict[str, Any]:
+        """Load and validate scenario file using jsonschema"""
         try:
             with open(self.scenario_path, 'r') as f:
                 scenario = json.load(f)
             
-            # Basic structure validation
-            required = ['agents', 'actions', 'workflow']
-            for key in required:
-                if key not in scenario:
-                    raise ScenarioError(f"Missing required section: {key}")
+            # Load and validate against schema
+            schema = self._load_schema()
+            try:
+                jsonschema.validate(instance=scenario, schema=schema)
+            except jsonschema.ValidationError as e:
+                raise ValidationError(f"Scenario validation failed: {e.message}")
+            
+            # Additional validation: check for duplicate agent names
+            agent_names = [agent['name'] for agent in scenario['agents']]
+            if len(agent_names) != len(set(agent_names)):
+                duplicates = [name for name in agent_names if agent_names.count(name) > 1]
+                raise ValidationError(f"Duplicate agent names found: {', '.join(set(duplicates))}")
+            
+            # Additional validation: check for duplicate action names
+            action_names = [action['name'] for action in scenario['actions']]
+            if len(action_names) != len(set(action_names)):
+                duplicates = [name for name in action_names if action_names.count(name) > 1]
+                raise ValidationError(f"Duplicate action names found: {', '.join(set(duplicates))}")
+            
+            # Convert arrays to dictionaries for easier access
+            agents_dict = {agent['name']: agent for agent in scenario['agents']}
+            actions_dict = {action['name']: action for action in scenario['actions']}
+            
+            scenario['agents'] = agents_dict
+            scenario['actions'] = actions_dict
             
             return scenario
             
@@ -179,55 +214,6 @@ class ScenarioExecutor:
             raise ScenarioError(f"Invalid JSON in scenario file: {e}")
         except FileNotFoundError:
             raise ScenarioError(f"Scenario file not found: {self.scenario_path}")
-    
-    def _validate_scenario(self):
-        """Validate scenario consistency"""
-        # Collect all defined agent names and action names
-        defined_agents = set(self.scenario['agents'].keys())
-        defined_actions = set(self.scenario['actions'].keys())
-        
-        
-        # Check workflow steps
-        for i, step in enumerate(self.scenario['workflow']):
-            step_id = step.get('id', f'step_{i}')
-            
-            # Validate agent exists
-            if 'agent' in step:
-                agent_name = step['agent']
-                if agent_name not in defined_agents:
-                    raise ValidationError(f"Step '{step_id}': Unknown agent '{agent_name}'. Available agents: {', '.join(sorted(defined_agents))}")
-                
-
-            
-            # Validate action exists
-            action_name = step.get('action')
-            if action_name and action_name not in ['createAgent', 'loop', 'clear_context', 'run_python']:
-                if action_name not in defined_actions:
-                    raise ValidationError(f"Step '{step_id}': Unknown action '{action_name}'. Available actions: {', '.join(sorted(defined_actions))}")
-                
-                # Validate input count matches placeholders in action prompt
-                action_prompt = self.scenario['actions'][action_name]['prompt']
-                placeholder_count = len(re.findall(r'\{\{(\d+)\}\}', action_prompt))
-                input_count = len(step.get('inputs', []))
-                
-                if input_count != placeholder_count:
-                    raise ValidationError(
-                        f"Step '{step_id}': Action '{action_name}' expects {placeholder_count} inputs but got {input_count}"
-                    )
-        
-        # Additional validation for loop steps
-        self._validate_loop_steps(self.scenario['workflow'])
-
-    def _validate_loop_steps(self, steps):
-        """Recursively validate loop steps"""
-        for i, step in enumerate(steps):
-            if step.get('action') == 'loop':
-                loop_steps = step.get('steps', [])
-                if not loop_steps:
-                    raise ValidationError(f"Loop step at index {i}: No steps defined in loop")
-                
-                # Recursively validate nested steps
-                self._validate_loop_steps(loop_steps)
     
     def _read_file(self, filepath: str) -> str:
         """Read file from output directory or absolute path"""
@@ -357,6 +343,7 @@ class ScenarioExecutor:
         logger.info(f"Starting scenario: {self.scenario.get('config', {}).get('name', 'Unnamed')}")
         
         try:
+            print(workflow_steps)
             await self._execute_steps(workflow_steps)
         finally:
             # Cleanup
@@ -420,7 +407,7 @@ class ScenarioExecutor:
         
         logger.info(f"Executing: {action} ({step_id})")
         
-# Handle built-in actions
+        # Handle built-in actions
         if action == 'loop':
             await self._execute_loop(step, loop_context)
         elif action == 'clear_context':
