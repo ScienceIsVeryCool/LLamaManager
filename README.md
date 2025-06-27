@@ -9,6 +9,7 @@ A clean, human-readable system for orchestrating multi-agent conversations with 
 - **File-based workflow**: All inputs and outputs are files - no complex variable tracking
 - **Multi-agent orchestration**: Coordinate multiple AI agents with different personalities
 - **Python execution testing**: Run and test generated Python code automatically
+- **Interactive user input**: Pause workflow for human input and review
 - **Memory efficient**: Only one model loaded at a time
 - **Automatic context management**: Agents automatically manage their conversation history
 - **Built-in iteration support**: Loop through workflows with automatic variable substitution
@@ -228,6 +229,37 @@ pip install matplotlib numpy pandas  # Install packages as needed
 deactivate
 ```
 
+### User Input
+Pause execution and wait for user input from the terminal:
+
+```json
+{
+  "action": "user_input",
+  "inputs": ["summary.txt", "Please review the above summary"],
+  "output": "user_feedback.txt"
+}
+```
+
+**User Input Features:**
+- Displays all input files and text to the user in the terminal
+- Pauses workflow execution indefinitely until user provides input
+- Saves user's response to the specified output file
+- Supports both file inputs and literal text prompts
+- Workflow continues normally after user input is collected
+
+**User Input Behavior:**
+1. The system displays a formatted header indicating user input is required
+2. All inputs are shown to the user (files are read and displayed, text is shown as-is)
+3. The user is prompted to enter a response
+4. The response is saved to the output file
+5. Execution continues with the next workflow step
+
+**Example Use Cases:**
+- Manual review and approval of generated content
+- Collecting user requirements mid-workflow
+- Human quality control checkpoints
+- Interactive decision making in automated processes
+
 ## Schema Validation
 
 All scenario files are automatically validated against the JSON schema before execution. The validation ensures:
@@ -239,15 +271,15 @@ All scenario files are automatically validated against the JSON schema before ex
 
 If validation fails, you'll receive clear error messages indicating what needs to be fixed.
 
-## Complete Example: Code Development with Testing
+## Complete Example: Interactive Code Development
 
 ```json
 {
   "config": {
-    "name": "Code Development with Testing",
+    "name": "Interactive Code Development",
     "version": "1.0",
-    "description": "Generate, execute, and analyze Python code",
-    "workDir": "./code_test_output",
+    "description": "Generate code with human review and approval",
+    "workDir": "./interactive_output",
     "logLevel": "info"
   },
   
@@ -261,10 +293,10 @@ If validation fails, you'll receive clear error messages indicating what needs t
       "queryTimeout": 400
     },
     {
-      "name": "tester",
+      "name": "improver",
       "model": "gemma:2b",
-      "temperature": 0.3,
-      "personality": "You are a QA engineer who analyzes code execution and identifies issues.",
+      "temperature": 0.5,
+      "personality": "You are a senior developer who improves code based on feedback.",
       "maxContextTokens": 8000,
       "queryTimeout": 300
     }
@@ -276,12 +308,8 @@ If validation fails, you'll receive clear error messages indicating what needs t
       "prompt": "Implement a {{1}} that {{2}}. Include proper error handling and documentation."
     },
     {
-      "name": "analyzeExecution",
-      "prompt": "Analyze this execution output:\n\n{{1}}\n\nIdentify any issues, errors, or improvements needed."
-    },
-    {
-      "name": "fixIssues",
-      "prompt": "Fix the issues in this code based on the execution analysis:\n\nOriginal Code:\n{{1}}\n\nExecution Analysis:\n{{2}}"
+      "name": "improve",
+      "prompt": "Improve this code based on the following feedback:\n\nOriginal Code:\n{{1}}\n\nUser Feedback:\n{{2}}\n\nProvide the improved version."
     }
   ],
   
@@ -289,32 +317,31 @@ If validation fails, you'll receive clear error messages indicating what needs t
     {
       "action": "implement",
       "agent": "developer",
-      "inputs": ["Python script", "creates a simple visualization using matplotlib"],
-      "output": "visualization.py",
+      "inputs": ["Python script", "creates a data visualization dashboard"],
+      "output": "dashboard.py",
+      "format": "python"
+    },
+    {
+      "action": "user_input",
+      "inputs": ["dashboard.py", "Please review the generated code above. Provide feedback or suggestions for improvement:"],
+      "output": "user_feedback.txt"
+    },
+    {
+      "action": "improve",
+      "agent": "improver",
+      "inputs": ["dashboard.py", "user_feedback.txt"],
+      "output": "dashboard_improved.py",
       "format": "python"
     },
     {
       "action": "run_python",
-      "inputs": ["visualization.py"],
-      "output": "execution.log"
+      "inputs": ["dashboard_improved.py"],
+      "output": "execution_results.log"
     },
     {
-      "action": "analyzeExecution",
-      "agent": "tester",
-      "inputs": ["execution.log"],
-      "output": "analysis.md"
-    },
-    {
-      "action": "fixIssues",
-      "agent": "developer",
-      "inputs": ["visualization.py", "analysis.md"],
-      "output": "visualization_fixed.py",
-      "format": "python"
-    },
-    {
-      "action": "run_python",
-      "inputs": ["visualization_fixed.py"],
-      "output": "final_execution.log"
+      "action": "user_input",
+      "inputs": ["execution_results.log", "Final approval - does the output look correct? (yes/no):"],
+      "output": "final_approval.txt"
     }
   ]
 }
@@ -383,6 +410,8 @@ python cli.py scenario.json --quiet
 10. **Work Directory**: Use descriptive work directory names to organize different scenario runs
 11. **Python Testing**: Use `run_python` to validate generated code automatically
 12. **Virtual Environment**: Keep `testenv` isolated with only necessary packages
+13. **Interactive Workflows**: Use `user_input` for quality control and approval checkpoints
+14. **User Experience**: Provide clear prompts and context when requesting user input
 
 ## Troubleshooting
 
@@ -391,6 +420,7 @@ python cli.py scenario.json --quiet
 - Check that all required fields are present
 - Verify that agent and action names are unique
 - Make sure field types match the schema (arrays vs objects)
+- Ensure `user_input` actions are included as valid action types in your schema
 
 ### File Not Found Errors
 - Ensure the file was created in a previous step
@@ -422,6 +452,12 @@ python cli.py scenario.json --quiet
 - Increase `queryTimeout` in agent definition for complex reasoning tasks
 - Monitor model performance and adjust timeouts accordingly
 - Consider using simpler prompts if timeouts persist
+
+### User Input Issues
+- Ensure terminal input is available (not running in background processes)
+- Use Ctrl+C to cancel user input if needed
+- Check that output file is being created correctly
+- Verify input files exist before user_input step
 
 ### Virtual Environment Setup
 ```bash

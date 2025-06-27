@@ -1,0 +1,116 @@
+{
+  "config": {
+    "name": "Simplified Iterative Development",
+    "version": "1.0",
+    "description": "One developer creates a solution, which is then tested and reviewed, with concise feedback provided for refinement.",
+    "logLevel": "info",
+    "workDir": "./log_8pm/"
+  },
+  "agents": [
+    {
+      "model": "gemma3:12b",
+      "name": "developer",
+      "temperature": 0.5,
+      "personality": "You are a junior Python developer who values clean, efficient code. You prefer well-tested libraries and established patterns. You write Python code with a focus on performance and maintainability. You believe in 'keep it simple, stupid' and optimize for clarity and speed. You're skeptical of unnecessary features.",
+      "queryTimeout": 6000,
+      "maxContextTokens": 124000
+    },
+    {
+      "model": "gemma3:12b",
+      "name": "reviewer",
+      "temperature": 0.3,
+      "personality": "You are a Senior Python Engineer evaluating competing implementations. You value both creativity and practicality. Be direct about strengths and weaknesses. Consider performance, visual appeal, code quality, and how well the solution meets requirements. Provide balanced feedback to both developers.",
+      "queryTimeout": 6000,
+      "maxContextTokens": 124000
+    }
+  ],
+  "actions": [
+    {
+      "name": "createGamePlan",
+      "prompt": "Analyze this execution log:\n\n{{1}}\n\nOk so now you are going to take in the comments from your angel investor. It is very important you take this seriously but take into account all of your analysis from before as well. We are calling the angel investor now: BEGIN ANGEL \n\n {{2}} \n\n END ANGEL \n If there was no response they were probably busy and you will just need to use your intuition. summarize how to fix any identified errors and/or suggest features to add to the code for improvement.\n Here is the code for reference:\n\n{{3}}"
+    },
+    {
+      "name": "provideFeedback",
+      "prompt": "Based on what you saw, what are the points for the dev to address in the next iteration? Make sure takeaways are actionable for the developer. Keep in mind the developer does not see the test results or angel investor information. that is confidential to you. You are responsible for delegating the work to the dev so that the next iteration goes in the right direction. What you say next will be exactly what the dev sees."
+    },
+    {
+      "name": "incorporateFeedback",
+      "prompt": "Here's your feedback for improving the graphical evolution simulation:\n\n{{1}}\n\nRefine your previous evolution simulation based on this feedback. Provide the complete improved implementation, ensuring it's runnable.\n\n{{2}}\n\nThere is the code the last time it was written for reference. remember, give me only a full complete solution incorperating all feedback without commentary"
+    },
+    {
+      "name": "overwriteCheck",
+      "prompt": "You are now a judge that decides one file versus another. Here is the original file:\n\n {{1}} \n\n Here is the proposed updated solution: \n\n {{2}}. Remember this, this was your original gameplan you drafted:\n\n{{3}}\n\n and here is the important angel investor's words if they had any about the new update: \n\n{{4}} \n\n ... \n Please without any commentary write out word for word without creating bugs the original contents of the file that you decide is better with all of the context you now have."
+    }
+  ],
+  "workflow": [
+    {
+      "action": "run_python",
+      "inputs": [
+        "solution.py"
+      ],
+      "output": "execution.log"
+    },
+    {
+      "action": "loop",
+      "iterations": 5,
+      "steps": [
+        {
+          "action":"user_input",
+          "inputs": ["What do you think about the current state of the app?"],
+          "output": "angel_investor.txt"
+        },
+        {
+          "action": "createGamePlan",
+          "agent": "reviewer",
+          "inputs": [
+            "execution.log",
+            "angel_investor.txt",
+            "solution.py"
+          ],
+          "output": "gameplan.md"
+        },
+        {
+          "action": "clear_context",
+          "agent": "reviewer"
+        },
+        {
+          "action": "incorporateFeedback",
+          "agent": "developer",
+          "inputs": [
+            "gameplan.md",
+            "solution.py"
+          ],
+          "output": "proposed_solution.py",
+          "format": "python"
+        },
+        {
+          "action": "run_python",
+          "inputs": [
+            "proposed_solution.py"
+          ],
+          "output": "execution.log"
+        },
+        {
+          "action":"user_input",
+          "inputs": ["Did it get better?"],
+          "output": "angel_investor.txt"
+        },
+        {
+          "action": "overwriteCheck",
+          "agent": "reviewer",
+          "inputs": ["solution.py", "proposed_solution.py", "gameplan.md", "angel_investor.txt"],
+          "output": "solution.py",
+          "format": "python"
+        },
+        {
+          "action": "clear_context",
+          "agent": "reviewer"
+        },
+        {
+          "action": "clear_context",
+          "agent": "developer"
+        }
+      ]
+    }
+  ]
+}

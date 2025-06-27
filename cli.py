@@ -262,6 +262,10 @@ async def main():
                     print(f"      Iterations: {step.get('iterations', 1)}")
                 elif action == 'run_python':
                     print(f"      Python execution with inputs: {step.get('inputs', [])}")
+                elif action == 'user_input':
+                    print(f"      User input with prompts: {step.get('inputs', [])}")
+                    if 'output' in step:
+                        print(f"      Will save user response to: {step['output']}")
         return
     
     try:

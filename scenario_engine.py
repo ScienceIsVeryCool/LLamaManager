@@ -361,10 +361,62 @@ class ScenarioExecutor:
             await self._clear_context(step)
         elif action == 'run_python':
             await self._execute_run_python(step, step_id)
+        elif action == 'user_input':
+            await self._execute_user_input(step, step_id)
         elif action in self.actions_map:
             await self._execute_action(step, step_id, loop_context)
         else:
             raise ActionError(f"Unknown action: {action}")
+
+    async def _execute_user_input(self, step: Dict[str, Any], step_id: str):
+        """Execute user input action - display inputs and wait for user response"""
+        inputs = step.get('inputs', [])
+        
+        # Process inputs like other actions
+        processed_inputs = []
+        for input_value in inputs:
+            if isinstance(input_value, str) and ' ' not in input_value:
+                try:
+                    content = self._read_file(self.output_dir / input_value)
+                    processed_inputs.append(content)
+                    logger.debug(f"Read file '{input_value}': {len(content)} characters")
+                except ActionError:
+                    processed_inputs.append(input_value)
+                    logger.debug(f"File '{input_value}' not found, treating as literal text")
+            else:
+                processed_inputs.append(str(input_value))
+                logger.debug(f"Using literal input: '{input_value}'")
+        
+        # Display all inputs to user
+        print("\n" + "="*60)
+        print("USER INPUT REQUIRED")
+        print("="*60)
+        
+        if processed_inputs:
+            for i, input_content in enumerate(processed_inputs, 1):
+                print(f"\n--- Input {i} ---")
+                print(str(input_content))
+        else:
+            print("\n--- No inputs to display ---")
+        
+        print("\n" + "="*60)
+        print("Please enter your response (press Enter when done):")
+        print("="*60)
+        
+        # Wait for user input
+        try:
+            user_response = input()
+        except KeyboardInterrupt:
+            raise ActionError(f"User input cancelled in step '{step_id}'")
+        except EOFError:
+            raise ActionError(f"Unexpected end of input in step '{step_id}'")
+        
+        # Save to output file if specified
+        if 'output' in step:
+            await self._save_output(user_response, step['output'])
+            logger.info(f"User input saved to '{step['output']}'")
+        
+        logger.info(f"User input completed for step '{step_id}'")
 
     async def _execute_run_python(self, step: Dict[str, Any], step_id: str):
         """Execute a Python script in the testenv virtual environment on Ubuntu."""
@@ -451,6 +503,13 @@ class ScenarioExecutor:
                 output = f"EXECUTION TIMED OUT AFTER {self.python_timeout} SECONDS\n"
                 return_code = -1
             
+            # TODO put this in the config 
+            # SHRINK THE LOG SIZE DOWN TO JUST 20,000
+            MAX_LEN_LOG = 20_000
+            if len(output) > MAX_LEN_LOG:
+                logger.info(f"Python execution output was this long! '{len(output)}'. Shrinking to 20,000")
+                output = output[:MAX_LEN_LOG -30]
+
             output_content = f"=== Python Script Execution Results ===\n"
             output_content += f"Command: {' '.join(command_parts)}\n"
             output_content += f"Return Code: {return_code}\n"
